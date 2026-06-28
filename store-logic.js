@@ -270,7 +270,7 @@ function lineExtraShippingPerUnit(p, variantLabel) {
   return baseEx;
 }
 
-/** Extra on top of weight-based shipping: single largest line extra (per-unit × qty), not a sum across lines. */
+/** Extra on top of weight-based shipping: once per cart line (qty does not multiply it); largest line wins, not summed. */
 function cartExtraShippingRs(cart, products) {
   let maxLineExtra = 0;
   cart.forEach(function (item) {
@@ -279,9 +279,7 @@ function cartExtraShippingRs(cart, products) {
     });
     if (!p) return;
     const vl = item.variantLabel != null ? String(item.variantLabel).trim() : '';
-    const perUnit = lineExtraShippingPerUnit(p, vl);
-    const q = Math.max(0, Math.floor(Number(item.qty) || 0));
-    const lineExtra = perUnit * q;
+    const lineExtra = lineExtraShippingPerUnit(p, vl);
     if (lineExtra > maxLineExtra) maxLineExtra = lineExtra;
   });
   return maxLineExtra;
@@ -290,7 +288,7 @@ function cartExtraShippingRs(cart, products) {
 const RRM_COUPON_SESSION = 'rrm_checkout_coupon';
 const RRM_COUPONS_LOCAL_KEY = 'rrm_coupons_local';
 const RRM_COUPON_USES_LOCAL_KEY = 'rrm_coupon_uses_local';
-const RRM_INSTORE_SALES_LOCAL_KEY = 'rrm_instore_sales';
+const COUPON_FREE_SHIPPING_TAG = '__FREE_SHIPPING__';
 
 function parseExcludedProductIds(raw) {
   if (raw == null || raw === '') return [];
@@ -302,12 +300,51 @@ function parseExcludedProductIds(raw) {
       .filter(Boolean);
   }
   if (typeof raw === 'string') {
+    const s = raw.trim();
     try {
-      const j = JSON.parse(raw);
+      const j = JSON.parse(s);
       if (Array.isArray(j)) return parseExcludedProductIds(j);
     } catch (_e) {}
+    // Handle Postgres text[] literal format: {"A","B"} or {A,B}
+    if (s.startsWith('{') && s.endsWith('}')) {
+      const inner = s.slice(1, -1).trim();
+      if (!inner) return [];
+      return inner
+        .split(',')
+        .map(function (part) {
+          return String(part || '')
+            .trim()
+            .replace(/^"(.*)"$/, '$1')
+            .replace(/\\"/g, '"')
+            .trim();
+        })
+        .filter(Boolean);
+    }
   }
   return [];
+}
+
+function hasFreeShippingMarker(excludedIds) {
+  return (excludedIds || []).some(function (id) {
+    const s = String(id || '').trim().toUpperCase();
+    if (!s) return false;
+    if (s === COUPON_FREE_SHIPPING_TAG) return true;
+    return /FREE[_\s-]*SHIPPING/.test(s);
+  });
+}
+
+function inferFreeShippingFromLegacyCoupon(def) {
+  if (!def) return false;
+  const code = String(def.code || '').toUpperCase();
+  const kind = String(def.kind || '').toLowerCase();
+  const amount = Number(def.amount);
+  // Backward-compatible fallback for older RPCs that don't return excluded_product_ids.
+  return (
+    /INSTORE|PICKUP/.test(code) &&
+    kind === 'fixed' &&
+    Number.isFinite(amount) &&
+    amount <= 1
+  );
 }
 
 function getAppliedCouponSnapshot() {
@@ -317,13 +354,16 @@ function getAppliedCouponSnapshot() {
     const o = JSON.parse(raw);
     if (!o || !o.code || !o.kind) return null;
     const mdr = o.maxDiscountRs != null ? Number(o.maxDiscountRs) : null;
+    const excludedIds = parseExcludedProductIds(o.excludedProductIds);
+    const freeShipping = hasFreeShippingMarker(excludedIds);
     return {
       code: String(o.code).toUpperCase(),
       kind: o.kind === 'fixed' ? 'fixed' : 'percent',
       amount: Number(o.amount),
       minSubtotal: Number(o.minSubtotal) || 0,
       maxDiscountRs: Number.isFinite(mdr) && mdr > 0 ? mdr : null,
-      excludedProductIds: parseExcludedProductIds(o.excludedProductIds)
+      excludedProductIds: excludedIds.filter(function (id) { return id !== COUPON_FREE_SHIPPING_TAG; }),
+      freeShipping: freeShipping || inferFreeShippingFromLegacyCoupon(o)
     };
   } catch (_e) {
     return null;
@@ -358,6 +398,7 @@ function cartSubtotalEligibleForCoupon(cart, products, excludedIds) {
 function computeCouponDiscountRs(eligibleMerchSubtotal, snap) {
   const sub = Number(eligibleMerchSubtotal);
   if (!snap || !Number.isFinite(sub) || sub <= 0) return 0;
+  if (snap.freeShipping) return 0;
   if (sub < (snap.minSubtotal || 0)) return 0;
   const cap =
     snap.maxDiscountRs != null && Number.isFinite(Number(snap.maxDiscountRs)) && Number(snap.maxDiscountRs) > 0
@@ -438,13 +479,16 @@ async function lookupCouponDefinition(code) {
     if (!r.error && r.data && r.data.length) {
       const row = r.data[0];
       const mdr = row.max_discount_rs != null ? Number(row.max_discount_rs) : null;
+      const excludedIds = parseExcludedProductIds(row.excluded_product_ids);
+      const freeShipping = hasFreeShippingMarker(excludedIds);
       return {
         code: norm,
         kind: row.kind === 'fixed' ? 'fixed' : 'percent',
         amount: Number(row.amount),
         minSubtotal: Number(row.min_subtotal) || 0,
         maxDiscountRs: Number.isFinite(mdr) && mdr > 0 ? mdr : null,
-        excludedProductIds: parseExcludedProductIds(row.excluded_product_ids)
+        excludedProductIds: excludedIds.filter(function (id) { return id !== COUPON_FREE_SHIPPING_TAG; }),
+        freeShipping: freeShipping || inferFreeShippingFromLegacyCoupon({ code: norm, kind: row.kind, amount: row.amount })
       };
     }
   }
@@ -462,13 +506,16 @@ async function lookupCouponDefinition(code) {
   }
   const mdrLocal =
     hit.max_discount_rs != null ? Number(hit.max_discount_rs) : hit.maxDiscountRs != null ? Number(hit.maxDiscountRs) : null;
+  const excludedIds = parseExcludedProductIds(hit.excluded_product_ids || hit.excludedProductIds);
+  const freeShipping = hasFreeShippingMarker(excludedIds);
   return {
     code: norm,
     kind: hit.kind === 'fixed' ? 'fixed' : 'percent',
     amount: Number(hit.amount),
     minSubtotal: Number(hit.min_subtotal) || Number(hit.minSubtotal) || 0,
     maxDiscountRs: Number.isFinite(mdrLocal) && mdrLocal > 0 ? mdrLocal : null,
-    excludedProductIds: parseExcludedProductIds(hit.excluded_product_ids || hit.excludedProductIds)
+    excludedProductIds: excludedIds.filter(function (id) { return id !== COUPON_FREE_SHIPPING_TAG; }),
+    freeShipping: freeShipping || inferFreeShippingFromLegacyCoupon({ code: norm, kind: hit.kind, amount: hit.amount })
   };
 }
 
@@ -487,12 +534,12 @@ async function applyCheckoutCoupon() {
   const cart = getCart();
   const products = getProducts();
   const elig = cartSubtotalEligibleForCoupon(cart, products, def.excludedProductIds);
-  if (cart.length > 0 && elig <= 0) {
+  if (!def.freeShipping && cart.length > 0 && elig <= 0) {
     showToast('This coupon does not apply to the products in your cart.');
     return;
   }
   setAppliedCouponSnapshot(def);
-  showToast('Coupon applied.');
+  showToast(def.freeShipping ? 'Free shipping coupon applied.' : 'Coupon applied.');
   refreshCheckoutTotals();
 }
 
@@ -503,7 +550,7 @@ function clearCheckoutCoupon() {
   refreshCheckoutTotals();
 }
 
-/** Merch subtotal, coupon discount, shipping = weight-based rate + largest line extra (per-unit×qty per line, then max). */
+/** Merch subtotal, coupon discount, shipping = weight-based rate + largest line extra (once per cart line), not summed. */
 function computeCheckoutMoney(cart, products, stateVal, couponSnap) {
   let subtotal = 0;
   cart.forEach(function (item) {
@@ -522,14 +569,21 @@ function computeCheckoutMoney(cart, products, stateVal, couponSnap) {
   const shipping = baseShip + extraShip;
   const eligibleSub = cartSubtotalEligibleForCoupon(cart, products, couponSnap ? couponSnap.excludedProductIds : []);
   const discount = computeCouponDiscountRs(eligibleSub, couponSnap);
+  const shippingDiscount =
+    couponSnap && couponSnap.freeShipping && subtotal >= (couponSnap.minSubtotal || 0)
+      ? roundPrice(shipping)
+      : 0;
+  const shippingAfterCoupon = Math.max(0, roundPrice(shipping - shippingDiscount));
   const afterDiscount = Math.max(0, roundPrice(subtotal - discount));
-  const total = roundPrice(afterDiscount + shipping);
+  const total = roundPrice(afterDiscount + shippingAfterCoupon);
   return {
     subtotal: subtotal,
     discount: discount,
+    shippingDiscount: shippingDiscount,
     afterDiscount: afterDiscount,
     weightKg: weightKg,
-    shipping: shipping,
+    shipping: shippingAfterCoupon,
+    shippingOriginal: shipping,
     shippingBase: baseShip,
     shippingExtra: extraShip,
     total: total,
@@ -718,6 +772,12 @@ async function supabaseSaveProductRow(sb, row, isUpdate, editId) {
   return res;
 }
 
+/** Single “money accepted” state in UI and new writes. Legacy `Paid` is normalized to this. */
+function normalizeCanonicalOrderStatus(status) {
+  const s = status == null || status === '' ? 'Pending' : String(status);
+  return s === 'Paid' ? 'Confirmed' : s;
+}
+
 function orderFromSupabaseRow(row) {
   const c = row.customer || {};
   const items = (row.order_items || []).map(function (it) {
@@ -751,7 +811,7 @@ function orderFromSupabaseRow(row) {
     payMethod: row.payment_method || 'razorpay',
     date: row.created_at ? new Date(row.created_at).toLocaleDateString('en-IN') : '',
     createdAt: row.created_at ? String(row.created_at) : '',
-    status: row.status || 'Pending'
+    status: normalizeCanonicalOrderStatus(row.status || 'Pending')
   };
 }
 
@@ -1197,19 +1257,16 @@ function saveProducts(p) {
   localStorage.setItem('rrm_products', JSON.stringify(p));
 }
 function getOrders() {
-  if (adminRemoteSession()) return ordersCache;
-  return JSON.parse(localStorage.getItem('rrm_orders') || '[]');
+  const raw = adminRemoteSession() ? ordersCache : JSON.parse(localStorage.getItem('rrm_orders') || '[]');
+  const list = Array.isArray(raw) ? raw : [];
+  return list.map(function (o) {
+    if (!o) return o;
+    const st = normalizeCanonicalOrderStatus(o.status);
+    return st === o.status ? o : Object.assign({}, o, { status: st });
+  });
 }
 function saveOrders(o) {
   localStorage.setItem('rrm_orders', JSON.stringify(o));
-}
-function getInstoreSales() {
-  if (adminRemoteSession()) return instoreSalesCache;
-  return JSON.parse(localStorage.getItem(RRM_INSTORE_SALES_LOCAL_KEY) || '[]');
-}
-function saveInstoreSales(rows) {
-  if (adminRemoteSession()) instoreSalesCache = rows.slice ? rows.slice() : rows;
-  localStorage.setItem(RRM_INSTORE_SALES_LOCAL_KEY, JSON.stringify(rows || []));
 }
 function getCart() { return JSON.parse(localStorage.getItem('rrm_cart') || '[]'); }
 function saveCart(c) { localStorage.setItem('rrm_cart', JSON.stringify(c)); updateCartCount(); }
@@ -1297,6 +1354,17 @@ function refreshCheckoutTotals() {
       discEl.textContent = '₹0';
     }
   }
+  const shipDiscRow = document.getElementById('co-shipping-discount-row');
+  const shipDiscEl = document.getElementById('co-shipping-discount');
+  if (shipDiscRow && shipDiscEl) {
+    if (m.shippingDiscount > 0) {
+      shipDiscRow.style.display = 'flex';
+      shipDiscEl.textContent = '−₹' + m.shippingDiscount + (snap ? ' (' + snap.code + ')' : '');
+    } else {
+      shipDiscRow.style.display = 'none';
+      shipDiscEl.textContent = '₹0';
+    }
+  }
   if (shipEl) shipEl.textContent = '₹' + m.shipping;
   if (totEl) totEl.textContent = '₹' + m.total;
   if (wEl) {
@@ -1309,8 +1377,70 @@ function refreshCheckoutTotals() {
 // ============================================================
 let currentPage = 'home';
 let pendingShopFilter = null;
-function navigate(page) {
-  if (page === 'admin') { showAdmin(); return; }
+let suppressHistory = false;
+
+function routeHashForState(state) {
+  if (!state || !state.page || state.page === 'home') return '#home';
+  if (state.page === 'detail' && state.productId) {
+    return '#detail/' + encodeURIComponent(String(state.productId));
+  }
+  return '#' + String(state.page);
+}
+
+function parseRouteFromHash() {
+  const raw = window.location.hash || '';
+  if (raw === '#admin') return { admin: true };
+  if (!raw || raw === '#home') return { page: 'home' };
+  if (raw.indexOf('#detail/') === 0) {
+    return { page: 'detail', productId: decodeURIComponent(raw.slice(8)) };
+  }
+  const page = raw.charAt(0) === '#' ? raw.slice(1) : raw;
+  if (document.getElementById('page-' + page)) return { page: page };
+  return { page: 'home' };
+}
+
+function navHistoryState(page) {
+  const state = { page: page };
+  if (page === 'detail' && detailProductId) state.productId = detailProductId;
+  if (page === 'shop') {
+    const filter = pendingShopFilter || currentFilter;
+    if (filter && filter !== 'All') state.shopFilter = filter;
+  }
+  return state;
+}
+
+function shouldPushNavHistory(page, state, prevPage, prevDetailId) {
+  if (page !== prevPage) return true;
+  if (page === 'detail') return state.productId !== prevDetailId;
+  if (page === 'shop') {
+    const filter = state.shopFilter || 'All';
+    const current = currentFilter || 'All';
+    return filter !== current;
+  }
+  return false;
+}
+
+function pushNavHistory(page, options, prevPage, prevDetailId) {
+  if (suppressHistory || (options && options.history === 'none')) return;
+  const state = navHistoryState(page);
+  if (!shouldPushNavHistory(page, state, prevPage, prevDetailId)) return;
+  const hash = routeHashForState(state);
+  const path = window.location.pathname + window.location.search + hash;
+  suppressHistory = true;
+  try {
+    if (options && options.history === 'replace') {
+      history.replaceState(state, '', path);
+    } else if (window.location.hash !== hash) {
+      window.location.hash = hash;
+    } else {
+      history.pushState(state, '', path);
+    }
+  } finally {
+    suppressHistory = false;
+  }
+}
+
+function showStorePage(page) {
   document.body.classList.remove('mobile-nav-open');
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('site-header').style.display = 'flex';
@@ -1325,7 +1455,7 @@ function navigate(page) {
   document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
   const na = document.getElementById('nav-' + page);
   if (na) na.classList.add('active');
-  window.scrollTo(0,0);
+  window.scrollTo(0, 0);
 
   if (page === 'shop') {
     currentFilter = pendingShopFilter || 'All';
@@ -1341,6 +1471,58 @@ function navigate(page) {
     const m = document.getElementById('contact-success-msg');
     if (m) m.classList.remove('show');
   }
+}
+
+function applyRouteFromHash(options) {
+  options = options || { history: 'none' };
+  const route = parseRouteFromHash();
+  if (route.admin) {
+    showAdmin();
+    return;
+  }
+  if (route.page === 'detail' && route.productId) {
+    viewProduct(route.productId, options);
+    return;
+  }
+  if (route.page === 'shop' && route.shopFilter) pendingShopFilter = route.shopFilter;
+  showStorePage(route.page || 'home');
+}
+
+window.addEventListener('hashchange', function () {
+  if (suppressHistory) return;
+  if (window.location.hash === '#admin') return;
+  applyRouteFromHash({ history: 'none' });
+});
+
+window.addEventListener('popstate', function (e) {
+  if (window.location.hash === '#admin') return;
+  if (suppressHistory) return;
+  if (e.state && e.state.page) {
+    suppressHistory = true;
+    try {
+      if (e.state.page === 'detail' && e.state.productId) {
+        viewProduct(e.state.productId, { history: 'none' });
+      } else {
+        if (e.state.page === 'shop' && e.state.shopFilter) pendingShopFilter = e.state.shopFilter;
+        showStorePage(e.state.page);
+      }
+    } finally {
+      suppressHistory = false;
+    }
+    return;
+  }
+  applyRouteFromHash({ history: 'none' });
+});
+
+function navigate(page, options) {
+  options = options || {};
+  if (page === 'admin') { showAdmin(); return; }
+  const prevPage = currentPage;
+  const prevDetailId = detailProductId;
+  if (!options.history || options.history !== 'none') {
+    pushNavHistory(page, options, prevPage, prevDetailId);
+  }
+  showStorePage(page);
 }
 
 function showAdmin() {
@@ -1421,8 +1603,143 @@ let adminProductListQ = '';
 let adminProductSort = 'name-asc';
 let adminProductPage = 1;
 const ADMIN_PRODUCTS_PAGE = 10;
+let couponExcludeSearchQ = '';
+const couponExcludeSelectedIds = new Set();
 let detailProductId = null;
 let detailQty = 1;
+
+const SEARCH_TOKEN_SYNONYMS = {
+  mould: ['mold', 'moulds', 'molds'],
+  mold: ['mould', 'moulds', 'molds'],
+  moulds: ['molds', 'mould', 'mold'],
+  molds: ['moulds', 'mould', 'mold'],
+  jewellery: ['jewelry', 'jewellerymaking', 'jewelrymaking'],
+  jewelry: ['jewellery', 'jewellerymaking', 'jewelrymaking'],
+  uv: ['ultraviolet', 'uvresin', 'uv-resin'],
+  ultraviolet: ['uv', 'uvresin', 'uv-resin'],
+  resin: ['epoxy', 'uvresin', 'uv-resin'],
+  inch: ['inches', 'in'],
+  inches: ['inch', 'in'],
+  clock: ['wallclock', 'clockmaking'],
+  keychain: ['keychains', 'key-chain', 'keychains'],
+  keychains: ['keychain', 'key-chain'],
+};
+
+function normalizeSearchText(raw) {
+  let s = String(raw == null ? '' : raw).toLowerCase();
+  // Normalize common unit/symbol patterns users type differently.
+  s = s.replace(/[”″"]/g, ' inch ');
+  s = s.replace(/[×*]/g, ' x ');
+  s = s.replace(/\bby\b/g, ' x ');
+  s = s.replace(/\b(inches|inch|in)\b/g, ' inch ');
+  s = s.replace(/(\d)\s*x\s*(\d)/g, '$1x$2');
+  s = s.replace(/(\d)\s*-\s*(\d)/g, '$1 $2');
+  s = s.replace(/[^a-z0-9x ]+/g, ' ');
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+}
+
+function tokenizeSearch(raw) {
+  const s = normalizeSearchText(raw);
+  if (!s) return [];
+  return s.split(' ').filter(Boolean);
+}
+
+function levenshteinAtMostOne(a, b) {
+  if (a === b) return true;
+  const la = a.length;
+  const lb = b.length;
+  if (!la || !lb) return false;
+  if (Math.abs(la - lb) > 1) return false;
+  // Keep typo matching narrow for performance + precision.
+  if (Math.min(la, lb) < 5) return false;
+  let i = 0;
+  let j = 0;
+  let edits = 0;
+  while (i < la && j < lb) {
+    if (a[i] === b[j]) {
+      i += 1;
+      j += 1;
+      continue;
+    }
+    edits += 1;
+    if (edits > 1) return false;
+    if (la > lb) i += 1;
+    else if (lb > la) j += 1;
+    else {
+      i += 1;
+      j += 1;
+    }
+  }
+  if (i < la || j < lb) edits += 1;
+  return edits <= 1;
+}
+
+function expandedTokenSet(tokens) {
+  const out = new Set();
+  tokens.forEach(function (t) {
+    if (!t) return;
+    out.add(t);
+    const syn = SEARCH_TOKEN_SYNONYMS[t];
+    if (Array.isArray(syn)) {
+      syn.forEach(function (v) {
+        out.add(v);
+      });
+    }
+  });
+  return out;
+}
+
+function productSearchText(p) {
+  const extras = (p.extraCategories || []).join(' ');
+  const variantLabels = hasVariants(p)
+    ? p.variants
+        .map(function (v) {
+          return String(v.label || '');
+        })
+        .join(' ')
+    : '';
+  return normalizeSearchText(
+    [
+      p.name || '',
+      p.category || '',
+      extras,
+      p.desc || '',
+      variantLabels,
+      p.searchKeywords || p.search_keywords || '',
+    ].join(' ')
+  );
+}
+
+function productMatchesSearchQuery(p, rawQuery) {
+  const queryNorm = normalizeSearchText(rawQuery);
+  if (!queryNorm) return true;
+  const qTokens = tokenizeSearch(queryNorm);
+  if (!qTokens.length) return true;
+  const doc = productSearchText(p);
+  if (!doc) return false;
+  if (doc.includes(queryNorm)) return true;
+  const docTokens = doc.split(' ').filter(Boolean);
+  const docSet = new Set(docTokens);
+  const qExpanded = expandedTokenSet(qTokens);
+  let matched = 0;
+  qExpanded.forEach(function (qt) {
+    if (!qt) return;
+    if (docSet.has(qt)) {
+      matched += 1;
+      return;
+    }
+    for (let i = 0; i < docTokens.length; i++) {
+      if (levenshteinAtMostOne(qt, docTokens[i])) {
+        matched += 1;
+        break;
+      }
+    }
+  });
+  // Require most query intent tokens to match (exact/synonym/near-typo).
+  const needed = Math.max(1, Math.ceil(qTokens.length * 0.7));
+  return matched >= needed;
+}
 
 function productMinVariantPrice(p) {
   if (!hasVariants(p)) return productSalePrice(p);
@@ -1587,13 +1904,11 @@ function paintShopGrid() {
   if (sg) {
     const byCategory =
       currentFilter === 'All' ? products : products.filter(function (p) { return productMatchesCategory(p, currentFilter); });
-    const q = (currentSearchQuery || '').trim().toLowerCase();
+    const q = currentSearchQuery || '';
     const filtered = !q
       ? byCategory
       : byCategory.filter(function (p) {
-          const extras = (p.extraCategories || []).join(' ');
-          const blob = (p.name + ' ' + p.category + ' ' + extras + ' ' + (p.desc || '')).toLowerCase();
-          return blob.includes(q);
+          return productMatchesSearchQuery(p, q);
         });
     const sorted = filtered.slice().sort(function (a, b) {
       return productSortCompare(a, b, shopSort);
@@ -1671,6 +1986,84 @@ function setSearchQuery(v) {
   paintShopGrid();
 }
 
+function getDetailMaxQty() {
+  const p = detailProductId ? getProducts().find(function (x) {
+    return x.id === detailProductId;
+  }) : null;
+  if (!p) return 9999;
+  const vl =
+    hasVariants(p) && document.getElementById('detail-variant')
+      ? String(document.getElementById('detail-variant').value || '').trim()
+      : '';
+  return maxQtyForCartLine(p, vl);
+}
+
+function syncDetailQtyDisplay() {
+  const el = document.getElementById('detail-qty');
+  if (el) el.value = detailQty;
+}
+
+function onDetailQtyInputKeydown(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    e.target.blur();
+  }
+}
+
+function onDetailQtyInputCommit(raw) {
+  const maxQ = getDetailMaxQty();
+  if (String(raw || '').trim() === '' || !Number.isFinite(Number(raw))) {
+    syncDetailQtyDisplay();
+    return;
+  }
+  const parsed = Math.floor(Number(raw));
+  if (parsed > maxQ) {
+    showToast('Only ' + maxQ + ' left in stock.');
+    detailQty = Math.max(1, maxQ);
+  } else {
+    detailQty = Math.max(1, parsed);
+  }
+  syncDetailQtyDisplay();
+}
+
+function onCartQtyInputKeydown(e, lineIndex) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    e.target.blur();
+  }
+}
+
+function onCartQtyInputCommit(lineIndex, raw) {
+  const products = getProducts();
+  const cart = getCart();
+  const item = cart[lineIndex];
+  if (!item) return;
+  const p = products.find(function (x) {
+    return x.id === item.id;
+  });
+  const vl = String(item.variantLabel || '').trim();
+  const maxQty = p ? maxQtyForCartLine(p, vl) : 0;
+  if (String(raw || '').trim() === '' || !Number.isFinite(Number(raw))) {
+    void renderCart();
+    return;
+  }
+  const parsed = Math.floor(Number(raw));
+  if (parsed <= 0) {
+    cart.splice(lineIndex, 1);
+    saveCart(cart);
+    void renderCart();
+    return;
+  }
+  if (parsed > maxQty) {
+    showToast('Only ' + maxQty + ' left in stock.');
+    item.qty = maxQty;
+  } else {
+    item.qty = parsed;
+  }
+  saveCart(cart);
+  void renderCart();
+}
+
 function onDetailVariantChange() {
   if (!detailProductId) return;
   const p = getProducts().find(function (x) {
@@ -1690,12 +2083,16 @@ function onDetailVariantChange() {
   btn.disabled = !inSt;
   btn.textContent = inSt ? 'Add to Cart' : 'Out of stock';
   detailQty = Math.min(detailQty, Math.max(1, maxQ || 1));
-  document.getElementById('detail-qty').textContent = detailQty;
+  syncDetailQtyDisplay();
 }
 
-function viewProduct(id) {
+function viewProduct(id, options) {
+  options = options || {};
   const p = getProducts().find(x => x.id === id);
-  if (!p) return;
+  if (!p) {
+    if (options.history === 'none') navigate('shop', { history: 'none' });
+    return;
+  }
   detailProductId = id;
   detailQty = 1;
   const imgEl = document.getElementById('detail-img');
@@ -1709,7 +2106,7 @@ function viewProduct(id) {
   }
   document.getElementById('detail-name').textContent = p.name;
   document.getElementById('detail-desc').textContent = p.desc;
-  document.getElementById('detail-qty').textContent = 1;
+  syncDetailQtyDisplay();
   const wrap = document.getElementById('detail-variant-wrap');
   const sel = document.getElementById('detail-variant');
   if (hasVariants(p) && wrap && sel) {
@@ -1739,26 +2136,18 @@ function viewProduct(id) {
     btn.disabled = !p.inStock;
     btn.textContent = p.inStock ? 'Add to Cart' : 'Out of stock';
   }
-  navigate('detail');
+  navigate('detail', options);
 }
 
 function changeDetailQty(delta) {
-  const p = detailProductId ? getProducts().find(x => x.id === detailProductId) : null;
-  let maxQ = 9999;
-  if (p) {
-    const vl =
-      hasVariants(p) && document.getElementById('detail-variant')
-        ? String(document.getElementById('detail-variant').value || '').trim()
-        : '';
-    maxQ = Math.max(1, maxQtyForCartLine(p, vl));
-  }
+  const maxQ = getDetailMaxQty();
   const next = detailQty + delta;
   if (delta > 0 && next > maxQ) {
     showToast('Only ' + maxQ + ' left in stock.');
     return;
   }
   detailQty = Math.max(1, Math.min(maxQ, next));
-  document.getElementById('detail-qty').textContent = detailQty;
+  syncDetailQtyDisplay();
 }
 
 function addDetailToCart() {
@@ -1854,7 +2243,8 @@ async function renderCart() {
       <div class="cart-item-actions">
         <div class="qty-ctrl">
           <button onclick="updateCartQty(${idx},-1)">−</button>
-          <span>${item.qty}</span>
+          <input type="number" class="qty-input" min="1" step="1" value="${item.qty}"
+                 onkeydown="onCartQtyInputKeydown(event,${idx})" onblur="onCartQtyInputCommit(${idx}, this.value)">
           <button onclick="updateCartQty(${idx},1)">+</button>
         </div>
         <button class="remove-btn" onclick="removeFromCart(${idx})">🗑</button>
@@ -1947,7 +2337,7 @@ function renderConfirmPage(order, items) {
     order.paymentRef
       ? `<div class="confirm-row"><span>Payment ID</span><strong>${escHtml(order.paymentRef)}</strong></div>`
       : '';
-  const paid = order.status === 'Paid' || order.status === 'Confirmed';
+  const paid = normalizeCanonicalOrderStatus(order.status) === 'Confirmed';
   const footNote = paid
     ? '<p style="font-size:13px;color:var(--text-muted);margin-top:14px;line-height:1.5;">Your payment was received. We will email you a confirmation and process your order.</p>'
     : '<p style="font-size:13px;color:var(--text-muted);margin-top:14px;line-height:1.5;">Your order is <strong>pending payment</strong>. Complete payment from checkout or contact us if you need help.</p>';
@@ -2024,6 +2414,7 @@ async function handleRazorpayPaid(response, order, items) {
     showToast((json && json.error) || 'Payment verification failed. If money was debited, contact us with your order ID.');
     return;
   }
+  if (json.stockWarning) console.warn(json.stockWarning);
   const paymentRef = response.razorpay_payment_id || '';
   const sb = getSb();
   if (sb) {
@@ -2054,8 +2445,11 @@ async function handleRazorpayPaid(response, order, items) {
     recordLocalCouponUse(paidOrder.couponCode);
   }
   setAppliedCouponSnapshot(null);
-  await sendOrderEmail(paidOrder);
-  await sendOrderConfirmationToCustomer(paidOrder);
+  // If server already sent emails, don't double-send from browser.
+  if (!(json && json.serverEmailsSent)) {
+    await sendOrderEmail(paidOrder);
+    await sendOrderConfirmationToCustomer(paidOrder);
+  }
   renderConfirmPage(paidOrder, items);
   navigate('confirm');
   showToast('Payment successful — order confirmed!');
@@ -2321,8 +2715,47 @@ async function placeOrder() {
 let adminLoggedIn = false;
 let deleteTargetId = null;
 let editingProductId = null;
+
+function updatePmDiscountPreview() {
+  const hintEl = document.getElementById('pm-discount-hint');
+  if (!hintEl) return;
+  const priceEl = document.getElementById('pm-price');
+  const compareEl = document.getElementById('pm-compare-price');
+  const price = priceEl ? parseFloat(priceEl.value) : NaN;
+  const mrp = compareEl ? parseFloat(compareEl.value) : NaN;
+  if (!Number.isFinite(mrp) || mrp <= 0 || !Number.isFinite(price) || price < 0) {
+    hintEl.textContent = '';
+    return;
+  }
+  if (mrp <= price) {
+    hintEl.textContent = 'No discount badge (Display MRP should be above selling price).';
+    return;
+  }
+  const pct = Math.round(((mrp - price) / mrp) * 100);
+  hintEl.textContent = 'Store will show ~' + pct + '% off at checkout and on product cards.';
+}
+
+function onPmPriceOrCompareInput() {
+  const discEl = document.getElementById('pm-discount-pct');
+  if (discEl) discEl.value = '';
+  updatePmDiscountPreview();
+}
+
+function onPmDiscountPctInput() {
+  const compareEl = document.getElementById('pm-compare-price');
+  const discEl = document.getElementById('pm-discount-pct');
+  const priceEl = document.getElementById('pm-price');
+  if (!compareEl || !discEl || !priceEl) return;
+  const mrp = parseFloat(compareEl.value);
+  const pct = parseFloat(discEl.value);
+  if (!Number.isFinite(mrp) || mrp <= 0 || !Number.isFinite(pct) || pct <= 0) {
+    updatePmDiscountPreview();
+    return;
+  }
+  priceEl.value = salePriceFromPercent(mrp, pct);
+  updatePmDiscountPreview();
+}
 let selectedSaleProductIds = new Set();
-let instoreSalesCache = [];
 
 /** Live storefront reads from Supabase when this is true. Legacy admin login cannot update the DB. */
 function storeUsesSupabaseCatalog() {
@@ -2390,7 +2823,6 @@ function adminTab(tab) {
   if (tab === 'orders') void loadAdminOrders();
   if (tab === 'messages') void loadAdminMessages();
   if (tab === 'coupons') void loadAdminCoupons();
-  if (tab === 'instore') void loadAdminInstore();
 }
 
 function orderPlacedAtDate(o) {
@@ -2443,7 +2875,7 @@ function orderMatchesRevenueStatusFilter(o, statusFilter) {
   const st = o.status || '';
   const key = String(statusFilter || '__pipeline__');
   if (key === '__pipeline__') {
-    return !!{ Confirmed: true, Paid: true, Shipped: true, Delivered: true }[st];
+    return !!{ Confirmed: true, Shipped: true, Delivered: true }[st];
   }
   if (key === '__any__') return true;
   return st === key;
@@ -2512,7 +2944,7 @@ function updateAdminRevenueDisplay() {
   if (countEl) countEl.textContent = String(r.count) + ' order' + (r.count === 1 ? '' : 's');
   if (subEl) {
     const periodNames = { all: 'All dates', day: 'Selected day', month: 'Selected month', year: 'Selected year' };
-    const st = r.statusFilter === '__pipeline__' ? 'Confirmed / Paid / Shipped / Delivered' : r.statusFilter === '__any__' ? 'Any status' : r.statusFilter;
+    const st = r.statusFilter === '__pipeline__' ? 'Confirmed / Shipped / Delivered' : r.statusFilter === '__any__' ? 'Any status' : r.statusFilter;
     subEl.textContent = (periodNames[r.period] || '') + ' · ' + st;
   }
 }
@@ -2520,6 +2952,51 @@ function updateAdminRevenueDisplay() {
 function onAdminRevenueFilterChange() {
   syncAdminRevenueFilterInputs();
   updateAdminRevenueDisplay();
+}
+
+function onAdminRecentOrdersFilterChange() {
+  renderRecentOrdersTable(getOrders());
+}
+
+function ordersSortedNewestFirst(orders) {
+  return orders.slice().sort(function (a, b) {
+    const ta = orderPlacedAtDate(a);
+    const tb = orderPlacedAtDate(b);
+    if (ta && tb) return tb.getTime() - ta.getTime();
+    if (ta) return -1;
+    if (tb) return 1;
+    return 0;
+  });
+}
+
+function renderRecentOrdersTable(orders) {
+  const tbody = document.getElementById('recent-orders-body');
+  const metaEl = document.getElementById('admin-recent-orders-meta');
+  const statusEl = document.getElementById('admin-recent-orders-status');
+  if (!tbody) return;
+  const statusFilter = statusEl ? statusEl.value : '__any__';
+  const sorted = ordersSortedNewestFirst(orders);
+  const filtered = sorted.filter(function (o) {
+    return orderMatchesRevenueStatusFilter(o, statusFilter);
+  });
+  const recent = filtered.slice(0, 5);
+  tbody.innerHTML = recent.map(function (o) {
+    return (
+      '<tr><td><code style="font-size:12px;">#' + escHtml(o.id) + '</code></td><td>' + escHtml(o.name) + '</td><td>' + o.items.length + ' item(s)</td>' +
+      '<td>₹' + (o.total != null ? o.total : o.subtotal) + '</td><td style="text-transform:uppercase;font-size:12px;">' + escHtml(o.payMethod) + '</td>' +
+      '<td><span style="background:' + statusColor(o.status) + ';padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;">' + escHtml(o.status) + '</span></td></tr>'
+    );
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">' +
+    (orders.length ? 'No orders match this status.' : 'No orders yet.') + '</td></tr>';
+  if (metaEl) {
+    if (!orders.length) {
+      metaEl.textContent = '';
+    } else if (statusFilter === '__any__') {
+      metaEl.textContent = 'Showing ' + recent.length + ' of ' + orders.length + ' most recent orders.';
+    } else {
+      metaEl.textContent = 'Showing ' + recent.length + ' of ' + filtered.length + ' matching orders (newest first).';
+    }
+  }
 }
 
 async function loadAdminDashboard() {
@@ -2534,12 +3011,7 @@ async function loadAdminDashboard() {
     <div class="stat-card"><div class="stat-label">Orders Today</div><div class="stat-value">${todayOrders}</div><div class="stat-sub">${today}</div></div>`;
   syncAdminRevenueFilterInputs();
   updateAdminRevenueDisplay();
-  const tbody = document.getElementById('recent-orders-body');
-  tbody.innerHTML = orders.slice(0,5).map(o => `
-    <tr><td><code style="font-size:12px;">#${o.id}</code></td><td>${o.name}</td><td>${o.items.length} item(s)</td>
-    <td>₹${o.total != null ? o.total : o.subtotal}</td><td style="text-transform:uppercase;font-size:12px;">${o.payMethod}</td>
-    <td><span style="background:${statusColor(o.status)};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;">${o.status}</span></td></tr>
-  `).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">No orders yet.</td></tr>`;
+  renderRecentOrdersTable(orders);
 }
 
 async function applyBulkSaleDiscount() {
@@ -2936,6 +3408,37 @@ async function toggleProductFeatured(productId) {
  * Quick stock adjust from admin table. Single-SKU: updates product stockQty.
  * Multi-size: +1 adds to first variant; −1 removes from first variant with stock (then next). Use Edit for precise sizes.
  */
+async function saveAdminProductStock(productId, p) {
+  if (adminRemoteSession()) {
+    const sb = getSb();
+    const newTotal = Math.max(0, Math.floor(Number(p.stockQty) || 0));
+    let payload = {
+      stock_qty: newTotal,
+      in_stock: productInStock(p)
+    };
+    if (hasVariants(p)) payload.variants = p.variants;
+    let res = await sb.from('products').update(payload).eq('id', String(productId));
+    if (res.error && String(res.error.message || '').toLowerCase().includes('variants')) {
+      delete payload.variants;
+      res = await sb.from('products').update(payload).eq('id', String(productId));
+    }
+    if (res.error) {
+      console.error(res.error);
+      showToast(formatSupabaseError(res.error) || 'Could not update stock.');
+      await refreshCatalog();
+      loadAdminProducts();
+      return false;
+    }
+    await refreshCatalog();
+  } else {
+    saveProducts(getProducts());
+  }
+  loadAdminProducts();
+  paintShopGrid();
+  paintFeaturedGrid();
+  return true;
+}
+
 async function adjustAdminProductStock(productId, delta) {
   const d = Math.trunc(Number(delta) || 0);
   if (d === 0) return;
@@ -2976,32 +3479,52 @@ async function adjustAdminProductStock(productId, delta) {
     return;
   }
 
-  if (adminRemoteSession()) {
-    const sb = getSb();
-    let payload = {
-      stock_qty: newTotal,
-      in_stock: productInStock(p)
-    };
-    if (hasVariants(p)) payload.variants = p.variants;
-    let res = await sb.from('products').update(payload).eq('id', String(productId));
-    if (res.error && String(res.error.message || '').toLowerCase().includes('variants')) {
-      delete payload.variants;
-      res = await sb.from('products').update(payload).eq('id', String(productId));
-    }
-    if (res.error) {
-      console.error(res.error);
-      showToast(formatSupabaseError(res.error) || 'Could not update stock.');
-      await refreshCatalog();
-      loadAdminProducts();
-      return;
-    }
-    await refreshCatalog();
-  } else {
-    saveProducts(products);
+  await saveAdminProductStock(productId, p);
+}
+
+async function setAdminProductStock(productId, rawQty, variantLabel) {
+  if (blockLegacyAdminWhenLiveCatalog()) return;
+  const qty = Math.max(0, Math.floor(Number(rawQty) || 0));
+  if (String(rawQty || '').trim() !== '' && !Number.isFinite(Number(rawQty))) {
+    loadAdminProducts();
+    return;
   }
-  loadAdminProducts();
-  paintShopGrid();
-  paintFeaturedGrid();
+  const products = getProducts();
+  const p = products.find(function (x) {
+    return String(x.id) === String(productId);
+  });
+  if (!p) return;
+
+  const label = variantLabel != null ? String(variantLabel).trim() : '';
+  if (label) {
+    if (!hasVariants(p)) return;
+    const v = findVariantByLabel(p, label);
+    if (!v) return;
+    const prev = Math.max(0, Math.floor(Number(v.stockQty) || 0));
+    if (prev === qty) return;
+    v.stockQty = qty;
+    syncVariantAggregateFields(p);
+  } else {
+    if (hasVariants(p)) return;
+    const prev = Math.max(0, Math.floor(Number(p.stockQty) || 0));
+    if (prev === qty) return;
+    p.stockQty = qty;
+    p.inStock = productInStock(p);
+  }
+
+  await saveAdminProductStock(productId, p);
+}
+
+function onAdminStockInputKeydown(e, productId, variantLabel) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    e.target.blur();
+  }
+}
+
+function onAdminStockInputCommit(productId, el, variantLabel) {
+  const v = variantLabel != null && String(variantLabel).trim() ? String(variantLabel).trim() : '';
+  void setAdminProductStock(productId, el.value, v || null);
 }
 
 function loadAdminProducts() {
@@ -3099,21 +3622,65 @@ function loadAdminProducts() {
           '"'
         : '';
       const stockCell =
-        '<div class="admin-stock-ctrl"' +
-        multiTitle +
-        '>' +
-        '<button type="button"' +
-        stockMinusDisabled +
-        ' aria-label="Decrease stock" onclick=\'void adjustAdminProductStock(' +
-        idJs +
-        ',-1)\'>−</button>' +
-        '<span class="admin-stock-val">' +
-        stockN +
-        '</span>' +
-        '<button type="button" aria-label="Increase stock" onclick=\'void adjustAdminProductStock(' +
-        idJs +
-        ',1)\'>+</button>' +
-        '</div>';
+        (function () {
+          const isMulti = hasVariants(p);
+          const mainInput =
+            '<input type="number" class="admin-stock-input" min="0" step="1" value="' +
+            stockN +
+            '"' +
+            (isMulti ? ' readonly title="Total stock — type quantities per size below"' : ' title="Type stock quantity or use +/−"') +
+            (isMulti
+              ? ''
+              : ' onkeydown=\'onAdminStockInputKeydown(event,' +
+                idJs +
+                ',"")\' onblur=\'onAdminStockInputCommit(' +
+                idJs +
+                ',this,"")\'') +
+            '>';
+          const ctrl =
+            '<div class="admin-stock-ctrl"' +
+            multiTitle +
+            '>' +
+            '<button type="button"' +
+            stockMinusDisabled +
+            ' aria-label="Decrease stock" onclick=\'void adjustAdminProductStock(' +
+            idJs +
+            ',-1)\'>−</button>' +
+            mainInput +
+            '<button type="button" aria-label="Increase stock" onclick=\'void adjustAdminProductStock(' +
+            idJs +
+            ',1)\'>+</button>' +
+            '</div>';
+          if (!isMulti) return ctrl;
+          const variantRows = p.variants
+            .map(function (v) {
+              const vn = Math.max(0, Math.floor(Number(v.stockQty) || 0));
+              const isOut = vn <= 0;
+              const labelJs = JSON.stringify(String(v.label || 'Option'));
+              return (
+                '<div class="admin-variant-stock-row' +
+                (isOut ? ' out' : '') +
+                '">' +
+                '<span class="admin-variant-stock-label">' +
+                escHtml(String(v.label || 'Option')) +
+                '</span>' +
+                '<input type="number" class="admin-variant-stock-input" min="0" step="1" value="' +
+                vn +
+                '" title="Type stock for this size" onkeydown=\'onAdminStockInputKeydown(event,' +
+                idJs +
+                ',' +
+                labelJs +
+                ')\' onblur=\'onAdminStockInputCommit(' +
+                idJs +
+                ',this,' +
+                labelJs +
+                ')\'>' +
+                '</div>'
+              );
+            })
+            .join('');
+          return ctrl + '<div class="admin-variant-stock-list">' + variantRows + '</div>';
+        })();
       const featCell = p.featured
         ? '<button type="button" class="action-btn edit-btn" onclick=\'void toggleProductFeatured(' +
           idJs +
@@ -3147,6 +3714,51 @@ function loadAdminProducts() {
   loadAdminCategoryImages();
 }
 
+function productMatchesCouponExcludeSearch(p, q) {
+  if (!q) return true;
+  const extras = (p.extraCategories || []).join(' ');
+  return (p.name + ' ' + p.category + ' ' + extras + ' ' + p.id).toLowerCase().includes(q);
+}
+
+function syncCouponExcludeSelectionFromDom() {
+  document.querySelectorAll('.coupon-exclude-cb').forEach(function (cb) {
+    const v = String(cb.value || '').trim();
+    if (!v) return;
+    if (cb.checked) couponExcludeSelectedIds.add(v);
+    else couponExcludeSelectedIds.delete(v);
+  });
+}
+
+function onCouponExcludeCheckboxChange(cb) {
+  const v = String(cb.value || '').trim();
+  if (!v) return;
+  if (cb.checked) couponExcludeSelectedIds.add(v);
+  else couponExcludeSelectedIds.delete(v);
+  updateCouponExcludeSearchMeta(getProducts().length, document.querySelectorAll('.coupon-exclude-cb').length);
+}
+
+function onCouponExcludeSearchInput(v) {
+  syncCouponExcludeSelectionFromDom();
+  couponExcludeSearchQ = String(v || '')
+    .trim()
+    .toLowerCase();
+  renderCouponExcludeProductPicker();
+}
+
+function updateCouponExcludeSearchMeta(totalProducts, visibleCount) {
+  const metaEl = document.getElementById('coupon-form-excluded-meta');
+  if (!metaEl) return;
+  const q = couponExcludeSearchQ;
+  const selected = couponExcludeSelectedIds.size;
+  let text = selected ? selected + ' selected' : 'None selected';
+  if (q) {
+    text += ' · Showing ' + (visibleCount || 0) + ' of ' + totalProducts + ' products';
+  } else if (totalProducts) {
+    text += ' · ' + totalProducts + ' products';
+  }
+  metaEl.textContent = text;
+}
+
 function renderCouponExcludeProductPicker() {
   const wrap = document.getElementById('coupon-form-excluded-list');
   if (!wrap) return;
@@ -3155,37 +3767,66 @@ function renderCouponExcludeProductPicker() {
     .sort(function (a, b) {
       return String(a.name || '').localeCompare(String(b.name || ''));
     });
-  wrap.innerHTML = products.length
-    ? products
-        .map(function (p) {
-          const id = String(p.id);
-          return (
-            '<label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;margin-bottom:6px;cursor:pointer;line-height:1.35;">' +
-            '<input type="checkbox" class="coupon-exclude-cb" value="' +
-            escAttr(id) +
-            '" style="margin-top:2px;flex-shrink:0;">' +
-            '<span>' +
-            escHtml(p.name) +
-            '</span></label>'
-          );
-        })
-        .join('')
-    : '<span style="font-size:12px;color:var(--text-muted);">No products in catalog.</span>';
+  const q = couponExcludeSearchQ;
+  const filtered = q ? products.filter(function (p) { return productMatchesCouponExcludeSearch(p, q); }) : products;
+  if (!products.length) {
+    wrap.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">No products in catalog.</span>';
+    updateCouponExcludeSearchMeta(0, 0);
+    return;
+  }
+  if (!filtered.length) {
+    wrap.innerHTML =
+      '<span style="font-size:12px;color:var(--text-muted);">No products match your search.</span>';
+    updateCouponExcludeSearchMeta(products.length, 0);
+    return;
+  }
+  wrap.innerHTML = filtered
+    .map(function (p) {
+      const id = String(p.id);
+      const checked = couponExcludeSelectedIds.has(id) ? ' checked' : '';
+      return (
+        '<label class="coupon-exclude-item" style="display:flex;align-items:flex-start;gap:8px;font-size:12px;margin-bottom:6px;cursor:pointer;line-height:1.35;">' +
+        '<input type="checkbox" class="coupon-exclude-cb" value="' +
+        escAttr(id) +
+        '"' +
+        checked +
+        ' onchange="onCouponExcludeCheckboxChange(this)" style="margin-top:2px;flex-shrink:0;">' +
+        '<span>' +
+        escHtml(p.name) +
+        (p.category ? ' <span style="color:var(--text-muted);">(' + escHtml(p.category) + ')</span>' : '') +
+        '</span></label>'
+      );
+    })
+    .join('');
+  updateCouponExcludeSearchMeta(products.length, filtered.length);
 }
 
 function collectCouponFormExcludedProductIds() {
-  const ids = [];
-  document.querySelectorAll('.coupon-exclude-cb:checked').forEach(function (cb) {
-    const v = String(cb.value || '').trim();
-    if (v) ids.push(v);
-  });
-  return ids;
+  syncCouponExcludeSelectionFromDom();
+  return Array.from(couponExcludeSelectedIds);
+}
+
+function onCouponKindChange() {
+  const kindEl = document.getElementById('coupon-form-kind');
+  const amtWrap = document.getElementById('coupon-form-amount-wrap');
+  const amtEl = document.getElementById('coupon-form-amount');
+  const kind = kindEl ? String(kindEl.value || 'percent') : 'percent';
+  const freeShipping = kind === 'free_shipping';
+  if (amtWrap) amtWrap.style.display = freeShipping ? 'none' : '';
+  if (amtEl) {
+    if (freeShipping) {
+      amtEl.value = '1';
+    } else if (String(amtEl.value || '').trim() === '') {
+      amtEl.placeholder = kind === 'percent' ? '10' : '100';
+    }
+  }
 }
 
 async function loadAdminCoupons() {
   const tb = document.getElementById('coupons-tbody');
   if (!tb) return;
   renderCouponExcludeProductPicker();
+  onCouponKindChange();
   let rows = [];
   let useRedemptionCounts = false;
   const redemptionCounts = {};
@@ -3218,7 +3859,9 @@ async function loadAdminCoupons() {
         .map(function (row) {
           const code = String(row.code || '');
           const codeKey = code.trim().toUpperCase();
-          const kind = row.kind === 'fixed' ? 'fixed' : 'percent';
+          const rawExcluded = parseExcludedProductIds(row.excluded_product_ids || row.excludedProductIds);
+          const isFreeShipping = hasFreeShippingMarker(rawExcluded);
+          const kind = isFreeShipping ? 'free_shipping' : (row.kind === 'fixed' ? 'fixed' : 'percent');
           const amt = Number(row.amount);
           const minS = Number(row.min_subtotal != null ? row.min_subtotal : row.minSubtotal) || 0;
           const act = row.active !== false;
@@ -3239,12 +3882,17 @@ async function loadAdminCoupons() {
           } else {
             usesDisp = '—';
           }
-          const amtDisp = kind === 'percent' ? escHtml(String(amt)) + '%' : '₹' + escHtml(String(amt));
+          const amtDisp =
+            kind === 'free_shipping'
+              ? 'Removes shipping'
+              : (kind === 'percent' ? escHtml(String(amt)) + '%' : '₹' + escHtml(String(amt)));
           const capRaw =
             row.max_discount_rs != null ? Number(row.max_discount_rs) : row.maxDiscountRs != null ? Number(row.maxDiscountRs) : null;
           const capDisp =
             Number.isFinite(capRaw) && capRaw > 0 ? '₹' + escHtml(String(Math.round(capRaw))) : '—';
-          const excl = parseExcludedProductIds(row.excluded_product_ids || row.excludedProductIds);
+          const excl = parseExcludedProductIds(row.excluded_product_ids || row.excludedProductIds).filter(function (id) {
+            return id !== COUPON_FREE_SHIPPING_TAG;
+          });
           const exclDisp = excl.length ? escHtml(String(excl.length)) : '—';
           return (
             '<tr>' +
@@ -3252,7 +3900,7 @@ async function loadAdminCoupons() {
             escHtml(code) +
             '</strong></td>' +
             '<td>' +
-            (kind === 'percent' ? 'Percent' : 'Fixed ₹') +
+            (kind === 'free_shipping' ? 'Free Shipping' : (kind === 'percent' ? 'Percent' : 'Fixed ₹')) +
             '</td>' +
             '<td>' +
             amtDisp +
@@ -3300,8 +3948,10 @@ async function saveCouponFromAdminForm() {
   const maxDiscCapEl = document.getElementById('coupon-form-max-discount-rs');
   const actEl = document.getElementById('coupon-form-active');
   const code = codeEl ? String(codeEl.value || '').trim().toUpperCase() : '';
-  const kind = kindEl && kindEl.value === 'fixed' ? 'fixed' : 'percent';
-  const amount = amtEl ? Number(amtEl.value) : NaN;
+  const kindValue = kindEl ? String(kindEl.value || '') : 'percent';
+  const isFreeShipping = kindValue === 'free_shipping';
+  const kind = kindValue === 'fixed' || isFreeShipping ? 'fixed' : 'percent';
+  const amount = isFreeShipping ? 1 : (amtEl ? Number(amtEl.value) : NaN);
   const minS = minEl && minEl.value !== '' ? Number(minEl.value) : 0;
   const active = actEl ? actEl.checked : true;
   let maxUses = null;
@@ -3331,10 +3981,13 @@ async function saveCouponFromAdminForm() {
     showToast('Enter a valid amount.');
     return;
   }
-  if (kind === 'percent' && amount > 95) {
+  if (!isFreeShipping && kind === 'percent' && amount > 95) {
     showToast('Percent off cannot exceed 95.');
     return;
   }
+  const excludedWithFlags = isFreeShipping
+    ? [COUPON_FREE_SHIPPING_TAG].concat(excludedProductIds)
+    : excludedProductIds;
   const payload = {
     code: code,
     kind: kind,
@@ -3343,7 +3996,7 @@ async function saveCouponFromAdminForm() {
     active: active,
     max_uses: maxUses,
     max_discount_rs: maxDiscountRs,
-    excluded_product_ids: excludedProductIds.length ? excludedProductIds : []
+    excluded_product_ids: excludedWithFlags.length ? excludedWithFlags : []
   };
   if (adminRemoteSession()) {
     const sb = getSb();
@@ -3384,13 +4037,14 @@ async function saveCouponFromAdminForm() {
     writeLocalCouponsList(list);
   }
   if (codeEl) codeEl.value = '';
+  if (kindEl) kindEl.value = 'percent';
   if (amtEl) amtEl.value = '';
   if (minEl) minEl.value = '';
   if (maxUsesEl) maxUsesEl.value = '';
   if (maxDiscCapEl) maxDiscCapEl.value = '';
-  document.querySelectorAll('.coupon-exclude-cb').forEach(function (cb) {
-    cb.checked = false;
-  });
+  onCouponKindChange();
+  couponExcludeSelectedIds.clear();
+  renderCouponExcludeProductPicker();
   showToast('Coupon saved.');
   await loadAdminCoupons();
 }
@@ -3431,151 +4085,6 @@ async function toggleCouponActiveAdmin(code, nextActive) {
   showToast('Coupon ' + c + ' ' + (nextActive ? 'enabled.' : 'disabled.'));
 }
 
-async function refreshInstoreSalesCache() {
-  const sb = getSb();
-  if (!sb) {
-    instoreSalesCache = [];
-    return;
-  }
-  const r = await sb.from('instore_pickup_sales').select('*').order('created_at', { ascending: false });
-  if (r.error) {
-    console.warn('instore_pickup_sales', r.error);
-    instoreSalesCache = [];
-    return;
-  }
-  instoreSalesCache = (r.data || []).map(function (row) {
-    return {
-      id: row.id,
-      productId: row.product_id != null ? String(row.product_id) : '',
-      productName: String(row.product_name || ''),
-      qty: Math.max(1, Math.floor(Number(row.qty) || 1)),
-      unitPrice: Number(row.unit_price) || 0,
-      lineTotal: Number(row.line_total) || 0,
-      createdAt: row.created_at || new Date().toISOString()
-    };
-  });
-}
-
-function populateInstoreProductPicker() {
-  const sel = document.getElementById('instore-product');
-  if (!sel) return;
-  const options = getProducts()
-    .slice()
-    .sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || '')); })
-    .map(function (p) {
-      return '<option value="' + escAttr(String(p.id)) + '">' + escHtml(p.name) + '</option>';
-    })
-    .join('');
-  sel.innerHTML = options || '<option value="">No products</option>';
-}
-
-function onInstoreProductChange() {
-  const sel = document.getElementById('instore-product');
-  const priceEl = document.getElementById('instore-price');
-  if (!sel || !priceEl) return;
-  const pid = String(sel.value || '');
-  const p = getProducts().find(function (x) { return String(x.id) === pid; });
-  if (!p) return;
-  priceEl.value = String(Math.max(0, Math.round(Number(p.price) || 0)));
-}
-
-async function loadAdminInstore() {
-  if (adminRemoteSession()) await refreshInstoreSalesCache();
-  populateInstoreProductPicker();
-  onInstoreProductChange();
-  const rows = getInstoreSales();
-  const tb = document.getElementById('instore-tbody');
-  const sumEl = document.getElementById('instore-total-sum');
-  if (sumEl) {
-    const total = rows.reduce(function (s, r) { return s + (Number(r.lineTotal) || 0); }, 0);
-    sumEl.textContent = '₹' + roundPrice(total);
-  }
-  if (!tb) return;
-  tb.innerHTML = rows.length
-    ? rows.map(function (r) {
-        return '<tr>' +
-          '<td>' + escHtml(new Date(r.createdAt || Date.now()).toLocaleString('en-IN')) + '</td>' +
-          '<td>' + escHtml(r.productName || '—') + '</td>' +
-          '<td>' + escHtml(String(r.qty || 0)) + '</td>' +
-          '<td>₹' + escHtml(String(r.unitPrice || 0)) + '</td>' +
-          '<td><strong>₹' + escHtml(String(r.lineTotal || 0)) + '</strong></td>' +
-          '<td><button type="button" class="action-btn delete-btn" onclick=\'void deleteInstoreSaleEntry(' + JSON.stringify(String(r.id || '')) + ')\'>Delete</button></td>' +
-          '</tr>';
-      }).join('')
-    : '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">No in-store entries yet.</td></tr>';
-}
-
-async function addInstoreSaleEntry() {
-  if (blockLegacyAdminWhenLiveCatalog()) return;
-  const productSel = document.getElementById('instore-product');
-  const qtyEl = document.getElementById('instore-qty');
-  const priceEl = document.getElementById('instore-price');
-  const pid = productSel ? String(productSel.value || '') : '';
-  const qty = qtyEl ? Math.floor(Number(qtyEl.value) || 0) : 0;
-  const unitPrice = priceEl ? roundPrice(Number(priceEl.value) || 0) : 0;
-  const p = getProducts().find(function (x) { return String(x.id) === pid; });
-  if (!p || qty < 1 || unitPrice < 0) {
-    showToast('Select product, quantity, and valid price.');
-    return;
-  }
-  const entry = {
-    id: 'IS-' + Date.now(),
-    productId: String(p.id),
-    productName: String(p.name || ''),
-    qty: qty,
-    unitPrice: unitPrice,
-    lineTotal: roundPrice(unitPrice * qty),
-    createdAt: new Date().toISOString()
-  };
-  if (adminRemoteSession()) {
-    const sb = getSb();
-    const { error } = await sb.from('instore_pickup_sales').insert({
-      id: entry.id,
-      product_id: entry.productId,
-      product_name: entry.productName,
-      qty: entry.qty,
-      unit_price: entry.unitPrice,
-      line_total: entry.lineTotal
-    });
-    if (error) {
-      console.error(error);
-      showToast('Could not save in-store entry. Run in-store migration first.');
-      return;
-    }
-    await refreshInstoreSalesCache();
-  } else {
-    const rows = getInstoreSales();
-    rows.unshift(entry);
-    saveInstoreSales(rows);
-  }
-  if (qtyEl) qtyEl.value = '1';
-  onInstoreProductChange();
-  await loadAdminInstore();
-  showToast('In-store entry saved.');
-}
-
-async function deleteInstoreSaleEntry(id) {
-  const sid = String(id || '').trim();
-  if (!sid) return;
-  if (!confirm('Delete this in-store entry?')) return;
-  if (blockLegacyAdminWhenLiveCatalog()) return;
-  if (adminRemoteSession()) {
-    const sb = getSb();
-    const { error } = await sb.from('instore_pickup_sales').delete().eq('id', sid);
-    if (error) {
-      console.error(error);
-      showToast('Delete failed.');
-      return;
-    }
-    await refreshInstoreSalesCache();
-  } else {
-    const rows = getInstoreSales().filter(function (r) { return String(r.id) !== sid; });
-    saveInstoreSales(rows);
-  }
-  await loadAdminInstore();
-  showToast('In-store entry deleted.');
-}
-
 async function loadAdminOrders() {
   if (adminRemoteSession()) await refreshOrdersCache();
   const orders = getOrders();
@@ -3587,7 +4096,7 @@ async function loadAdminOrders() {
       <td>${o.date}</td>
       <td>
         <select class="order-status-select" onchange="void updateOrderStatus('${o.id}',this.value)">
-          ${['Pending payment','Pending','Paid','Confirmed','Shipped','Delivered','Cancelled'].map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}
+          ${['Pending payment','Pending','Confirmed','Shipped','Delivered','Cancelled'].map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}
         </select>
       </td>
       <td><button class="action-btn edit-btn" onclick="viewOrderDetail('${o.id}')">View</button></td>
@@ -3596,7 +4105,7 @@ async function loadAdminOrders() {
 }
 
 function isConfirmedLikeStatus(s) {
-  return s === 'Confirmed' || s === 'Paid';
+  return normalizeCanonicalOrderStatus(s) === 'Confirmed';
 }
 
 function variantLabelFromOrderItem(item, p) {
@@ -3699,9 +4208,11 @@ async function updateOrderStatus(id, status) {
     }
   }
   const wasPendingPay = prevStatus === 'Pending payment' || prevStatus === 'Pending';
-  const nowConfirmed = status === 'Paid' || status === 'Confirmed';
-  const crossedIntoConfirmed = !isConfirmedLikeStatus(prevStatus) && isConfirmedLikeStatus(status);
-  if (orderForEmail && crossedIntoConfirmed) {
+  const nowConfirmed = normalizeCanonicalOrderStatus(status) === 'Confirmed';
+  /** Avoid double-deduct after online pay (server deducts in razorpay-verify-payment). Admin: only from unpaid → Confirmed. */
+  const shouldDeductStockAdmin =
+    (prevStatus === 'Pending payment' || prevStatus === 'Pending') && nowConfirmed;
+  if (orderForEmail && shouldDeductStockAdmin) {
     await applyStockDeductionForOrder(orderForEmail);
     loadAdminProducts();
     paintShopGrid();
@@ -3804,7 +4315,7 @@ function pmAddSizeRow(pref) {
     '<input type="number" class="pm-sz-weight" min="0.01" step="0.01" placeholder="kg" title="Shipping weight (blank = product weight)" value="' +
     wg +
     '">' +
-    '<input type="number" class="pm-sz-extra" min="0" step="1" placeholder="+₹" title="Extra ₹/unit on top of weight-based rate" value="' +
+    '<input type="number" class="pm-sz-extra" min="0" step="1" placeholder="+₹" title="Extra ₹ per cart line on top of weight-based rate" value="' +
     ex +
     '">' +
     '<button type="button" class="pm-sz-remove" onclick="window.pmRemoveSizeRow(this)" style="border:none;background:var(--sand);border-radius:6px;cursor:pointer;font-size:16px;line-height:1;" title="Remove">×</button>';
@@ -3929,7 +4440,8 @@ function openProductModal(id=null) {
     document.getElementById('pm-cat').value = p.category;
     document.getElementById('pm-price').value = p.price;
     document.getElementById('pm-compare-price').value = p.compareAtPrice != null ? p.compareAtPrice : '';
-    document.getElementById('pm-discount-pct').value = hasVariants(p) ? '' : productDiscountPercent(p) || '';
+    document.getElementById('pm-discount-pct').value = '';
+    updatePmDiscountPreview();
     document.getElementById('pm-stock-qty').value = Number(p.stockQty) || 0;
     document.getElementById('pm-weight').value = productWeightKg(p);
     document.getElementById('pm-desc').value = p.desc;
@@ -3969,6 +4481,8 @@ function openProductModal(id=null) {
     document.getElementById('pm-price').value = '';
     document.getElementById('pm-compare-price').value = '';
     document.getElementById('pm-discount-pct').value = '';
+    const hintEl = document.getElementById('pm-discount-hint');
+    if (hintEl) hintEl.textContent = '';
     document.getElementById('pm-stock-qty').value = '0';
     document.getElementById('pm-stock-qty').disabled = false;
     document.getElementById('pm-weight').value = '0.5';
@@ -3997,6 +4511,8 @@ function onPmPrimaryCategoryChange() {
   paintPmExtraCategoryCheckboxes(kept);
 }
 window.onPmPrimaryCategoryChange = onPmPrimaryCategoryChange;
+window.onPmPriceOrCompareInput = onPmPriceOrCompareInput;
+window.onPmDiscountPctInput = onPmDiscountPctInput;
 
 function previewProductImg(e) {
   const file = e.target.files[0];
@@ -4088,14 +4604,16 @@ async function saveProduct() {
     showToast('Discount % must be between 0 and 95.');
     return;
   }
+  const isEdit = !!editingProductId;
   if (discountPct > 0 && !variants.length) {
-    // Use Display MRP when set — otherwise first-time save used Price as MRP. If we always used Price here,
-    // after the first save Price holds the *sale* (e.g. 45) and re-saving would wrongly treat 45 as MRP → 40.5.
     let mrp;
     if (compareAtPrice != null && Number.isFinite(compareAtPrice) && compareAtPrice > 0) {
       mrp = roundPrice(compareAtPrice);
-    } else {
+    } else if (!isEdit) {
       mrp = roundPrice(price);
+    } else {
+      showToast('Enter Display MRP when using Discount %, or clear Discount % to keep Price as entered.');
+      return;
     }
     compareAtPrice = mrp;
     price = salePriceFromPercent(mrp, discountPct);
@@ -4111,7 +4629,6 @@ async function saveProduct() {
     showToast('Please upload image file (stored in Supabase) or provide normal URL. Base64 images are disabled.');
     return;
   }
-  const isEdit = !!editingProductId;
   let row;
   if (isEdit) {
     const p = products.find(x => x.id === editingProductId);
@@ -4276,7 +4793,7 @@ async function loadAdminMessages() {
 }
 
 function statusColor(s) {
-  return {'Pending payment':'#FFE4B5',Pending:'#FFF3CD',Paid:'#D4EDDA',Confirmed:'#D4EDDA',Shipped:'#CCE5FF',Delivered:'#D4EDDA',Cancelled:'#F8D7DA'}[s]||'#f0f0f0';
+  return {'Pending payment':'#FFE4B5',Pending:'#FFF3CD',Confirmed:'#D4EDDA',Shipped:'#CCE5FF',Delivered:'#D4EDDA',Cancelled:'#F8D7DA'}[normalizeCanonicalOrderStatus(s)]||'#f0f0f0';
 }
 
 function openModal(id) { document.getElementById(id).classList.add('open'); }
@@ -4302,6 +4819,17 @@ function showToast(msg) {
 // ============================================================
 if (window.location.hash === '#admin') showAdmin();
 
+function initStoreHistory() {
+  if (window.location.hash === '#admin') return;
+  const route = parseRouteFromHash();
+  const state =
+    route.page === 'detail' && route.productId
+      ? { page: 'detail', productId: route.productId }
+      : { page: route.page || 'home' };
+  history.replaceState(state, '', window.location.pathname + window.location.search + routeHashForState(state));
+}
+initStoreHistory();
+
 // ============================================================
 // INIT
 // ============================================================
@@ -4316,6 +4844,10 @@ async function bootStore() {
   paintFeaturedGrid();
   paintFooterCategoryLinks();
   if (window.location.hash !== '#admin') {
+    const route = parseRouteFromHash();
+    if (route.page && route.page !== 'home') {
+      applyRouteFromHash({ history: 'none' });
+    }
     setTimeout(function () {
       openPolicyModal();
     }, 350);
@@ -4333,11 +4865,14 @@ window.onAdminProductSearchInput = onAdminProductSearchInput;
 window.onAdminProductSortChange = onAdminProductSortChange;
 window.adminProductsGoToPage = adminProductsGoToPage;
 window.adjustAdminProductStock = adjustAdminProductStock;
+window.onAdminStockInputKeydown = onAdminStockInputKeydown;
+window.onAdminStockInputCommit = onAdminStockInputCommit;
 window.toggleProductFeatured = toggleProductFeatured;
-window.onInstoreProductChange = onInstoreProductChange;
-window.addInstoreSaleEntry = addInstoreSaleEntry;
-window.deleteInstoreSaleEntry = deleteInstoreSaleEntry;
 window.toggleCouponActiveAdmin = toggleCouponActiveAdmin;
 window.saveCouponFromAdminForm = saveCouponFromAdminForm;
 window.deleteCouponAdmin = deleteCouponAdmin;
+window.onCouponKindChange = onCouponKindChange;
+window.onCouponExcludeSearchInput = onCouponExcludeSearchInput;
+window.onCouponExcludeCheckboxChange = onCouponExcludeCheckboxChange;
 window.onAdminRevenueFilterChange = onAdminRevenueFilterChange;
+window.onAdminRecentOrdersFilterChange = onAdminRecentOrdersFilterChange;
