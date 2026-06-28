@@ -720,6 +720,81 @@
   }
   #contact-success-msg.show { display: block; }
 
+  /* ── RESIN CALCULATOR ── */
+  .calc-page { padding: 40px 1.5rem 64px; }
+  .calc-page .calc-hero { text-align: center; margin-bottom: 32px; }
+  .calc-page .calc-hero h1 {
+    font-family: var(--font-head); font-size: clamp(28px, 4vw, 40px);
+    color: var(--ocean-dark); margin-bottom: 8px;
+  }
+  .calc-page .calc-hero p { font-size: 15px; color: var(--text-muted); max-width: 520px; margin: 0 auto; line-height: 1.55; }
+  .calc-wrap { max-width: 560px; margin: 0 auto; }
+  .calc-step { margin-bottom: 28px; }
+  .calc-step-label {
+    font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 12px;
+  }
+  .calc-choices { display: flex; flex-wrap: wrap; gap: 10px; }
+  .calc-choice-btn {
+    flex: 1 1 140px; min-width: 0; padding: 12px 16px;
+    background: white; border: 1.5px solid var(--border); border-radius: var(--radius);
+    font-family: var(--font-body); font-size: 14px; font-weight: 500; color: var(--text);
+    cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+    text-align: center;
+  }
+  .calc-choice-btn:hover { border-color: var(--ocean-light); }
+  .calc-choice-btn.active {
+    border-color: var(--ocean); border-width: 2px;
+    box-shadow: 0 2px 10px rgba(26,74,138,0.12); background: #f8faff;
+    font-weight: 600; color: var(--ocean-dark);
+  }
+  .calc-panel {
+    background: white; border: 1px solid var(--border); border-radius: var(--radius-lg);
+    padding: 24px 22px; box-shadow: var(--shadow); margin-top: 8px;
+  }
+  .calc-panel-title {
+    font-family: var(--font-head); font-size: 20px; font-weight: 600;
+    color: var(--ocean-dark); margin-bottom: 20px;
+  }
+  .calc-field { margin-bottom: 16px; }
+  .calc-field:last-of-type { margin-bottom: 0; }
+  .calc-field label {
+    display: block; font-size: 13px; font-weight: 500; color: var(--text);
+    margin-bottom: 6px;
+  }
+  .calc-field input {
+    width: 100%; padding: 11px 14px; border: 1px solid var(--border); border-radius: var(--radius);
+    font-family: var(--font-body); font-size: 15px; color: var(--text);
+    background: var(--cream); transition: border-color 0.15s;
+  }
+  .calc-field input:focus {
+    outline: none; border-color: var(--ocean-light); background: white;
+  }
+  .calc-field input::placeholder { color: #aaa; }
+  .calc-results {
+    margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border);
+  }
+  .calc-results-total {
+    font-size: 16px; font-weight: 600; color: var(--ocean-dark); margin-bottom: 12px;
+  }
+  .calc-results-split {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .calc-result-card {
+    background: var(--cream); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .calc-result-card .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
+  .calc-result-card .value { font-size: 18px; font-weight: 700; color: var(--ocean-dark); }
+  .calc-note {
+    margin-top: 20px; font-size: 12px; color: var(--text-muted); line-height: 1.5;
+    text-align: center;
+  }
+  .calc-divider { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+  @media (max-width: 480px) {
+    .calc-results-split { grid-template-columns: 1fr; }
+    nav a { font-size: 13px; padding: 6px 8px; }
+  }
+
   /* ── RESPONSIVE ── */
   @media (max-width: 768px) {
     .about-grid, .product-detail-grid, .cart-layout, .checkout-layout { grid-template-columns: 1fr; }
@@ -845,6 +920,7 @@
     <nav>
       <a onclick="navigate('home')" id="nav-home">Home</a>
       <a onclick="navigate('shop')" id="nav-shop">Shop</a>
+      <a onclick="navigate('calculator')" id="nav-calculator">Resin Calculator</a>
       <a onclick="navigate('about')" id="nav-about">About</a>
       <a onclick="navigate('contact')" id="nav-contact">Contact</a>
     </nav>
@@ -1013,6 +1089,44 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== RESIN CALCULATOR PAGE ==================== -->
+<div id="page-calculator" class="page">
+  <div class="calc-page">
+    <div class="container">
+      <div class="calc-hero">
+        <h1>Resin Calculator</h1>
+        <p>Estimate how much resin and hardener you need for coating or casting projects.</p>
+      </div>
+      <div class="calc-wrap">
+        <div class="calc-step">
+          <div class="calc-step-label">Select a Type:</div>
+          <div class="calc-choices" id="calc-type-btns">
+            <button type="button" class="calc-choice-btn" data-calc-type="coating" onclick="setCalcType('coating')">Coating</button>
+            <button type="button" class="calc-choice-btn active" data-calc-type="casting" onclick="setCalcType('casting')">Casting</button>
+          </div>
+        </div>
+        <div class="calc-step" id="calc-shape-step">
+          <div class="calc-step-label">Now Select a Shape</div>
+          <div class="calc-choices" id="calc-shape-btns">
+            <button type="button" class="calc-choice-btn active" data-calc-shape="rect" onclick="setCalcShape('rect')">Square / Rectangle</button>
+            <button type="button" class="calc-choice-btn" data-calc-shape="circle" onclick="setCalcShape('circle')">Circle</button>
+          </div>
+        </div>
+        <div class="calc-step" id="calc-ratio-step">
+          <div class="calc-step-label">Resin-Hardener Ratio:</div>
+          <div class="calc-choices" id="calc-ratio-btns">
+            <button type="button" class="calc-choice-btn active" data-calc-ratio="2:1" onclick="setCalcRatio('2:1')">2:1</button>
+            <button type="button" class="calc-choice-btn" data-calc-ratio="3:1" onclick="setCalcRatio('3:1')">3:1</button>
+          </div>
+        </div>
+        <hr class="calc-divider">
+        <div class="calc-panel" id="calc-input-panel"></div>
+        <p class="calc-note">Estimates are approximate (in grams). Always mix a little extra for cups and stir sticks. Check your product label for the correct ratio by weight or volume.</p>
       </div>
     </div>
   </div>
@@ -1204,6 +1318,7 @@
         <h4>Quick Links</h4>
         <a onclick="navigate('home')">Home</a>
         <a onclick="navigate('shop')">Shop</a>
+        <a onclick="navigate('calculator')">Resin Calculator</a>
         <a onclick="navigate('about')">About Us</a>
         <a onclick="navigate('contact')">Contact</a>
         <a onclick="navigate('cart')">Cart</a>
@@ -1427,7 +1542,23 @@
 
     <!-- Orders -->
     <div class="admin-tab-content" id="admin-orders">
-      <div class="admin-actions"><h3>All Orders</h3></div>
+      <div class="admin-recent-orders-head">
+        <h3 style="font-family:var(--font-head);font-size:20px;font-weight:700;color:var(--ocean-dark);margin:0;">All Orders</h3>
+        <div class="form-group">
+          <label for="admin-orders-status">Status</label>
+          <select id="admin-orders-status" onchange="onAdminOrdersFilterChange()">
+            <option value="__any__">All statuses</option>
+            <option value="__pipeline__">Confirmed / Shipped / Delivered</option>
+            <option value="Pending payment">Pending payment</option>
+            <option value="Pending">Pending</option>
+            <option value="Confirmed">Confirmed</option>
+            <option value="Shipped">Shipped</option>
+            <option value="Delivered">Delivered</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
+        </div>
+      </div>
+      <div class="admin-recent-orders-meta" id="admin-orders-meta"></div>
       <table class="admin-table">
         <thead><tr><th>Order ID</th><th>Customer</th><th>Phone</th><th>Total</th><th>Payment</th><th>Date</th><th>Status</th><th>View</th></tr></thead>
         <tbody id="orders-tbody"></tbody>
@@ -1544,6 +1675,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<script src="store-logic.js?v=20260627-10"></script>
+<script src="store-logic.js?v=20260628-1"></script>
 </body>
 </html>

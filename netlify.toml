@@ -6,3 +6,13 @@
 
 [functions]
   directory = "netlify/functions"
+
+[[headers]]
+  for = "/resin_rawmaterials_tn.html"
+  [headers.values]
+    Cache-Control = "no-cache, must-revalidate"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache, must-revalidate"

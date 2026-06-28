@@ -1377,12 +1377,25 @@ function refreshCheckoutTotals() {
 // ============================================================
 let currentPage = 'home';
 let pendingShopFilter = null;
+let storeBootRoutePending = true;
 let suppressHistory = false;
+let navStackPos = 0;
+const navStack = [{ page: 'home' }];
 
 function routeHashForState(state) {
   if (!state || !state.page || state.page === 'home') return '#home';
+  if (state.page === 'shop') {
+    if (state.shopFilter && state.shopFilter !== 'All') {
+      return '#shop/cat/' + encodeURIComponent(String(state.shopFilter));
+    }
+    return '#shop';
+  }
   if (state.page === 'detail' && state.productId) {
-    return '#detail/' + encodeURIComponent(String(state.productId));
+    let hash = '#detail/' + encodeURIComponent(String(state.productId));
+    if (state.variantLabel) {
+      hash += '/' + encodeURIComponent(String(state.variantLabel));
+    }
+    return hash;
   }
   return '#' + String(state.page);
 }
@@ -1391,50 +1404,123 @@ function parseRouteFromHash() {
   const raw = window.location.hash || '';
   if (raw === '#admin') return { admin: true };
   if (!raw || raw === '#home') return { page: 'home' };
+  if (raw.indexOf('#shop/cat/') === 0) {
+    return { page: 'shop', shopFilter: decodeURIComponent(raw.slice(10)) };
+  }
+  if (raw === '#shop') return { page: 'shop', shopFilter: 'All' };
   if (raw.indexOf('#detail/') === 0) {
-    return { page: 'detail', productId: decodeURIComponent(raw.slice(8)) };
+    const rest = raw.slice(8);
+    const slash = rest.indexOf('/');
+    if (slash >= 0) {
+      return {
+        page: 'detail',
+        productId: decodeURIComponent(rest.slice(0, slash)),
+        variantLabel: decodeURIComponent(rest.slice(slash + 1))
+      };
+    }
+    return { page: 'detail', productId: decodeURIComponent(rest) };
   }
   const page = raw.charAt(0) === '#' ? raw.slice(1) : raw;
   if (document.getElementById('page-' + page)) return { page: page };
   return { page: 'home' };
 }
 
+function routeToNavState(route) {
+  if (!route || route.admin) return { page: 'home' };
+  const state = { page: route.page || 'home' };
+  if (route.shopFilter) state.shopFilter = route.shopFilter;
+  if (route.productId) state.productId = route.productId;
+  if (route.variantLabel) state.variantLabel = route.variantLabel;
+  return state;
+}
+
+function cloneNavState(state) {
+  const s = { page: state.page || 'home' };
+  if (state.page === 'shop') s.shopFilter = state.shopFilter || 'All';
+  else if (state.shopFilter) s.shopFilter = state.shopFilter;
+  if (state.productId) s.productId = state.productId;
+  if (state.variantLabel) s.variantLabel = state.variantLabel;
+  return s;
+}
+
 function navHistoryState(page) {
   const state = { page: page };
-  if (page === 'detail' && detailProductId) state.productId = detailProductId;
+  if (page === 'detail' && detailProductId) {
+    state.productId = detailProductId;
+    if (detailVariantLabel) state.variantLabel = detailVariantLabel;
+  }
   if (page === 'shop') {
-    const filter = pendingShopFilter || currentFilter;
-    if (filter && filter !== 'All') state.shopFilter = filter;
+    const filter = pendingShopFilter != null ? pendingShopFilter : currentFilter;
+    state.shopFilter = filter || 'All';
   }
   return state;
 }
 
-function shouldPushNavHistory(page, state, prevPage, prevDetailId) {
-  if (page !== prevPage) return true;
-  if (page === 'detail') return state.productId !== prevDetailId;
-  if (page === 'shop') {
-    const filter = state.shopFilter || 'All';
-    const current = currentFilter || 'All';
-    return filter !== current;
+function navStatesEqual(a, b) {
+  if (!a || !b) return false;
+  if (a.page !== b.page) return false;
+  if (a.page === 'shop') return (a.shopFilter || 'All') === (b.shopFilter || 'All');
+  if (a.page === 'detail') {
+    return (
+      String(a.productId || '') === String(b.productId || '') &&
+      String(a.variantLabel || '') === String(b.variantLabel || '')
+    );
   }
-  return false;
+  return true;
 }
 
-function pushNavHistory(page, options, prevPage, prevDetailId) {
-  if (suppressHistory || (options && options.history === 'none')) return;
+function commitNavigation(page, options, prevState) {
+  options = options || {};
+  if (suppressHistory || options.history === 'none') return;
   const state = navHistoryState(page);
-  if (!shouldPushNavHistory(page, state, prevPage, prevDetailId)) return;
-  const hash = routeHashForState(state);
-  const path = window.location.pathname + window.location.search + hash;
+  const replace = options.history === 'replace';
+  const top = navStack[navStackPos];
+  if (!replace && top && navStatesEqual(top, state)) return;
+  if (!replace && prevState && navStatesEqual(prevState, state)) return;
+
+  if (replace) {
+    navStack[navStackPos] = cloneNavState(state);
+  } else {
+    navStack.splice(navStackPos + 1);
+    navStack.push(cloneNavState(state));
+    navStackPos = navStack.length - 1;
+  }
+
+  const path = window.location.pathname + window.location.search + routeHashForState(state);
+  const payload = Object.assign({ _navPos: navStackPos }, state);
   suppressHistory = true;
   try {
-    if (options && options.history === 'replace') {
-      history.replaceState(state, '', path);
-    } else if (window.location.hash !== hash) {
-      window.location.hash = hash;
-    } else {
-      history.pushState(state, '', path);
+    if (replace) history.replaceState(payload, '', path);
+    else history.pushState(payload, '', path);
+  } finally {
+    suppressHistory = false;
+  }
+}
+
+function restoreNavState(state) {
+  suppressHistory = true;
+  try {
+    if (!state || !state.page || state.page === 'home') {
+      showStorePage('home');
+      return;
     }
+    if (state.page === 'detail' && state.productId) {
+      viewProduct(state.productId, {
+        history: 'none',
+        variantLabel: state.variantLabel || '',
+        restore: true
+      });
+      return;
+    }
+    if (state.page === 'shop') {
+      pendingShopFilter =
+        state.shopFilter != null && state.shopFilter !== ''
+          ? state.shopFilter
+          : currentFilter || 'All';
+      showStorePage('shop');
+      return;
+    }
+    showStorePage(state.page);
   } finally {
     suppressHistory = false;
   }
@@ -1458,71 +1544,68 @@ function showStorePage(page) {
   window.scrollTo(0, 0);
 
   if (page === 'shop') {
-    currentFilter = pendingShopFilter || 'All';
+    if (pendingShopFilter != null) currentFilter = pendingShopFilter;
     pendingShopFilter = null;
     currentSearchQuery = '';
     shopCatalogPage = 1;
+    paintShopGrid();
     void renderShop();
   }
   if (page === 'home') void renderFeatured();
   if (page === 'cart') void renderCart();
   if (page === 'checkout') void renderCheckout();
+  if (page === 'calculator') paintResinCalculator();
   if (page === 'contact') {
     const m = document.getElementById('contact-success-msg');
     if (m) m.classList.remove('show');
   }
 }
 
-function applyRouteFromHash(options) {
-  options = options || { history: 'none' };
+function applyRouteFromHash() {
   const route = parseRouteFromHash();
   if (route.admin) {
     showAdmin();
     return;
   }
-  if (route.page === 'detail' && route.productId) {
-    viewProduct(route.productId, options);
-    return;
-  }
-  if (route.page === 'shop' && route.shopFilter) pendingShopFilter = route.shopFilter;
-  showStorePage(route.page || 'home');
+  restoreNavState(routeToNavState(route));
 }
 
-window.addEventListener('hashchange', function () {
-  if (suppressHistory) return;
+window.addEventListener('popstate', function (e) {
+  storeBootRoutePending = false;
   if (window.location.hash === '#admin') return;
-  applyRouteFromHash({ history: 'none' });
+  if (suppressHistory) return;
+  let state = null;
+  if (e.state && e.state.page) {
+    if (typeof e.state._navPos === 'number') navStackPos = e.state._navPos;
+    state = e.state;
+  } else if (typeof e.state === 'number' && navStack[e.state]) {
+    navStackPos = e.state;
+    state = navStack[navStackPos];
+  } else {
+    state = routeToNavState(parseRouteFromHash());
+    navStackPos = Math.max(0, navStack.findIndex(function (s) {
+      return navStatesEqual(s, state);
+    }));
+    if (navStackPos < 0) navStackPos = navStack.length - 1;
+  }
+  restoreNavState(state);
 });
 
-window.addEventListener('popstate', function (e) {
-  if (window.location.hash === '#admin') return;
-  if (suppressHistory) return;
-  if (e.state && e.state.page) {
-    suppressHistory = true;
-    try {
-      if (e.state.page === 'detail' && e.state.productId) {
-        viewProduct(e.state.productId, { history: 'none' });
-      } else {
-        if (e.state.page === 'shop' && e.state.shopFilter) pendingShopFilter = e.state.shopFilter;
-        showStorePage(e.state.page);
-      }
-    } finally {
-      suppressHistory = false;
-    }
-    return;
-  }
-  applyRouteFromHash({ history: 'none' });
-});
+function snapshotNavState() {
+  return cloneNavState(navHistoryState(currentPage));
+}
 
 function navigate(page, options) {
   options = options || {};
+  storeBootRoutePending = false;
   if (page === 'admin') { showAdmin(); return; }
-  const prevPage = currentPage;
-  const prevDetailId = detailProductId;
+  const prevState = snapshotNavState();
   if (!options.history || options.history !== 'none') {
-    pushNavHistory(page, options, prevPage, prevDetailId);
+    commitNavigation(page, options, prevState);
   }
-  showStorePage(page);
+  if (page !== 'detail') {
+    showStorePage(page);
+  }
 }
 
 function showAdmin() {
@@ -1595,6 +1678,7 @@ async function submitContactForm(e) {
 let currentFilter = 'All';
 let currentSearchQuery = '';
 let shopCatalogPage = 1;
+let shopRenderGen = 0;
 let shopSort = 'name-asc';
 const SHOP_PAGE_SIZE = 10;
 /** Max products marked featured for the home grid (admin enforces). */
@@ -1606,6 +1690,7 @@ const ADMIN_PRODUCTS_PAGE = 10;
 let couponExcludeSearchQ = '';
 const couponExcludeSelectedIds = new Set();
 let detailProductId = null;
+let detailVariantLabel = '';
 let detailQty = 1;
 
 const SEARCH_TOKEN_SYNONYMS = {
@@ -1897,9 +1982,18 @@ function paintShopGrid() {
   const si = document.getElementById('shop-search-input');
   if (si && si.value !== currentSearchQuery) si.value = currentSearchQuery;
   if (fb) {
-    fb.innerHTML = categories.map(c =>
-      `<button class="filter-btn ${c === currentFilter ? 'active' : ''}" onclick="setFilter('${c}')">${c}</button>`
-    ).join('');
+    fb.innerHTML = categories.map(function (c) {
+      const enc = encodeURIComponent(c);
+      return (
+        '<button class="filter-btn ' +
+        (c === currentFilter ? 'active' : '') +
+        '" onclick="setFilter(decodeURIComponent(\'' +
+        enc +
+        "'))\">" +
+        escHtml(c) +
+        '</button>'
+      );
+    }).join('');
   }
   if (sg) {
     const byCategory =
@@ -1970,14 +2064,20 @@ function shopGoToPage(n) {
 window.shopGoToPage = shopGoToPage;
 
 async function renderShop() {
+  const gen = ++shopRenderGen;
   await refreshCatalog();
+  if (gen !== shopRenderGen) return;
   paintShopGrid();
 }
 
 function setFilter(cat) {
+  if (currentFilter === cat) return;
   currentFilter = cat;
   shopCatalogPage = 1;
   paintShopGrid();
+  if (currentPage === 'shop' && !suppressHistory) {
+    commitNavigation('shop', { history: 'replace' });
+  }
 }
 
 function setSearchQuery(v) {
@@ -2064,7 +2164,7 @@ function onCartQtyInputCommit(lineIndex, raw) {
   void renderCart();
 }
 
-function onDetailVariantChange() {
+function onDetailVariantChange(skipHistoryUpdate) {
   if (!detailProductId) return;
   const p = getProducts().find(function (x) {
     return x.id === detailProductId;
@@ -2072,6 +2172,7 @@ function onDetailVariantChange() {
   if (!p || !hasVariants(p)) return;
   const sel = document.getElementById('detail-variant');
   const lab = sel ? String(sel.value || '').trim() : '';
+  detailVariantLabel = lab;
   const unit = effectiveUnitPriceForCartLine(p, lab);
   document.getElementById('detail-price').innerHTML = '<span class="price-sale">₹' + unit + '</span>';
   const maxQ = maxQtyForCartLine(p, lab);
@@ -2084,17 +2185,22 @@ function onDetailVariantChange() {
   btn.textContent = inSt ? 'Add to Cart' : 'Out of stock';
   detailQty = Math.min(detailQty, Math.max(1, maxQ || 1));
   syncDetailQtyDisplay();
+  if (!skipHistoryUpdate && currentPage === 'detail' && !suppressHistory) {
+    commitNavigation('detail', { history: 'replace' });
+  }
 }
 
 function viewProduct(id, options) {
   options = options || {};
+  storeBootRoutePending = false;
+  const prevState = snapshotNavState();
   const p = getProducts().find(x => x.id === id);
   if (!p) {
-    if (options.history === 'none') navigate('shop', { history: 'none' });
+    if (options.history === 'none') restoreNavState({ page: 'shop', shopFilter: currentFilter || 'All' });
     return;
   }
   detailProductId = id;
-  detailQty = 1;
+  if (!options.restore) detailQty = 1;
   const imgEl = document.getElementById('detail-img');
   imgEl.innerHTML = p.img
     ? `<img src="${p.img}" alt="${p.name}" onerror="this.style.display='none';this.parentElement.innerHTML='<span style=font-size:80px>${p.emoji}</span>'">`
@@ -2124,9 +2230,13 @@ function viewProduct(id, options) {
         );
       })
       .join('');
-    sel.value = p.variants[0].label;
-    onDetailVariantChange();
+    const wantVariant = String(options.variantLabel || '').trim();
+    const match = wantVariant && findVariantByLabel(p, wantVariant);
+    sel.value = match ? wantVariant : p.variants[0].label;
+    detailVariantLabel = String(sel.value || '').trim();
+    onDetailVariantChange(true);
   } else {
+    detailVariantLabel = '';
     if (wrap) wrap.style.display = 'none';
     document.getElementById('detail-price').innerHTML = formatProductPriceHTML(p);
     document.getElementById('detail-stock-badge').innerHTML = p.inStock
@@ -2136,7 +2246,28 @@ function viewProduct(id, options) {
     btn.disabled = !p.inStock;
     btn.textContent = p.inStock ? 'Add to Cart' : 'Out of stock';
   }
-  navigate('detail', options);
+  document.body.classList.remove('mobile-nav-open');
+  document.querySelectorAll('.page').forEach(function (pg) {
+    pg.classList.remove('active');
+  });
+  document.getElementById('site-header').style.display = 'flex';
+  document.getElementById('site-footer').style.display = 'block';
+  const policyFab = document.getElementById('policy-fab');
+  if (policyFab) policyFab.style.display = 'inline-flex';
+  document.getElementById('admin-login').style.display = 'none';
+  document.getElementById('admin-panel').style.display = 'none';
+  const el = document.getElementById('page-detail');
+  if (el) el.classList.add('active');
+  currentPage = 'detail';
+  document.querySelectorAll('nav a').forEach(function (a) {
+    a.classList.remove('active');
+  });
+  const na = document.getElementById('nav-shop');
+  if (na) na.classList.add('active');
+  window.scrollTo(0, 0);
+  if (!options.history || options.history !== 'none') {
+    commitNavigation('detail', options, prevState);
+  }
 }
 
 function changeDetailQty(delta) {
@@ -2956,6 +3087,59 @@ function onAdminRevenueFilterChange() {
 
 function onAdminRecentOrdersFilterChange() {
   renderRecentOrdersTable(getOrders());
+}
+
+function onAdminOrdersFilterChange() {
+  renderAdminOrdersTable(getOrders());
+}
+
+function adminStatusFilterSelectHtml(selectId, onchangeHandler) {
+  return (
+    '<div class="form-group">' +
+    '<label for="' +
+    selectId +
+    '">Status</label>' +
+    '<select id="' +
+    selectId +
+    '" onchange="' +
+    onchangeHandler +
+    '">' +
+    '<option value="__any__">All statuses</option>' +
+    '<option value="__pipeline__">Confirmed / Shipped / Delivered</option>' +
+    '<option value="Pending payment">Pending payment</option>' +
+    '<option value="Pending">Pending</option>' +
+    '<option value="Confirmed">Confirmed</option>' +
+    '<option value="Shipped">Shipped</option>' +
+    '<option value="Delivered">Delivered</option>' +
+    '<option value="Cancelled">Cancelled</option>' +
+    '</select></div>'
+  );
+}
+
+/** Upgrades older deployed HTML that only had the plain "All Orders" heading. */
+function ensureAdminOrdersFilterUi() {
+  if (document.getElementById('admin-orders-status')) return;
+  const tab = document.getElementById('admin-orders');
+  if (!tab) return;
+  const table = tab.querySelector('.admin-table');
+  if (!table) return;
+
+  const head = document.createElement('div');
+  head.className = 'admin-recent-orders-head';
+  head.innerHTML =
+    '<h3 style="font-family:var(--font-head);font-size:20px;font-weight:700;color:var(--ocean-dark);margin:0;">All Orders</h3>' +
+    adminStatusFilterSelectHtml('admin-orders-status', 'onAdminOrdersFilterChange()');
+
+  const meta = document.createElement('div');
+  meta.className = 'admin-recent-orders-meta';
+  meta.id = 'admin-orders-meta';
+
+  const oldActions = tab.querySelector('.admin-actions');
+  if (oldActions) oldActions.replaceWith(head);
+  else tab.insertBefore(head, table);
+  if (!document.getElementById('admin-orders-meta')) {
+    tab.insertBefore(meta, table);
+  }
 }
 
 function ordersSortedNewestFirst(orders) {
@@ -4086,22 +4270,72 @@ async function toggleCouponActiveAdmin(code, nextActive) {
 }
 
 async function loadAdminOrders() {
+  ensureAdminOrdersFilterUi();
   if (adminRemoteSession()) await refreshOrdersCache();
-  const orders = getOrders();
-  document.getElementById('orders-tbody').innerHTML = orders.map(o => `
-    <tr>
-      <td><code style="font-size:12px;">#${o.id}</code></td>
-      <td>${o.name}</td><td>${o.phone}</td><td>₹${o.total != null ? o.total : o.subtotal}</td>
-      <td style="text-transform:uppercase;font-size:12px;">${o.payMethod}</td>
-      <td>${o.date}</td>
-      <td>
-        <select class="order-status-select" onchange="void updateOrderStatus('${o.id}',this.value)">
-          ${['Pending payment','Pending','Confirmed','Shipped','Delivered','Cancelled'].map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}
-        </select>
-      </td>
-      <td><button class="action-btn edit-btn" onclick="viewOrderDetail('${o.id}')">View</button></td>
-    </tr>
-  `).join('') || `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px;">No orders yet.</td></tr>`;
+  renderAdminOrdersTable(getOrders());
+}
+
+function renderAdminOrdersTable(orders) {
+  const tbody = document.getElementById('orders-tbody');
+  const metaEl = document.getElementById('admin-orders-meta');
+  const statusEl = document.getElementById('admin-orders-status');
+  if (!tbody) return;
+  const statusFilter = statusEl ? statusEl.value : '__any__';
+  const sorted = ordersSortedNewestFirst(orders);
+  const filtered = sorted.filter(function (o) {
+    return orderMatchesRevenueStatusFilter(o, statusFilter);
+  });
+  tbody.innerHTML = filtered
+    .map(function (o) {
+      const idJs = JSON.stringify(String(o.id));
+      return (
+        '<tr>' +
+        '<td><code style="font-size:12px;">#' +
+        escHtml(o.id) +
+        '</code></td>' +
+        '<td>' +
+        escHtml(o.name) +
+        '</td><td>' +
+        escHtml(o.phone) +
+        '</td><td>₹' +
+        (o.total != null ? o.total : o.subtotal) +
+        '</td>' +
+        '<td style="text-transform:uppercase;font-size:12px;">' +
+        escHtml(o.payMethod) +
+        '</td>' +
+        '<td>' +
+        escHtml(o.date) +
+        '</td>' +
+        '<td>' +
+        '<select class="order-status-select" onchange=\'void updateOrderStatus(' +
+        idJs +
+        ',this.value)\'>' +
+        ['Pending payment', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled']
+          .map(function (s) {
+            return '<option' + (s === o.status ? ' selected' : '') + '>' + escHtml(s) + '</option>';
+          })
+          .join('') +
+        '</select>' +
+        '</td>' +
+        '<td><button class="action-btn edit-btn" onclick=\'viewOrderDetail(' +
+        idJs +
+        ')\'>View</button></td>' +
+        '</tr>'
+      );
+    })
+    .join('') ||
+    '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px;">' +
+    (orders.length ? 'No orders match this status.' : 'No orders yet.') +
+    '</td></tr>';
+  if (metaEl) {
+    if (!orders.length) {
+      metaEl.textContent = '';
+    } else if (statusFilter === '__any__') {
+      metaEl.textContent = 'Showing all ' + orders.length + ' orders (newest first).';
+    } else {
+      metaEl.textContent = 'Showing ' + filtered.length + ' of ' + orders.length + ' orders (newest first).';
+    }
+  }
 }
 
 function isConfirmedLikeStatus(s) {
@@ -4822,13 +5056,186 @@ if (window.location.hash === '#admin') showAdmin();
 function initStoreHistory() {
   if (window.location.hash === '#admin') return;
   const route = parseRouteFromHash();
-  const state =
-    route.page === 'detail' && route.productId
-      ? { page: 'detail', productId: route.productId }
-      : { page: route.page || 'home' };
-  history.replaceState(state, '', window.location.pathname + window.location.search + routeHashForState(state));
+  const state = routeToNavState(route);
+  navStack[0] = cloneNavState(state);
+  navStackPos = 0;
+  const payload = Object.assign({ _navPos: 0 }, state);
+  history.replaceState(payload, '', window.location.pathname + window.location.search + routeHashForState(state));
 }
 initStoreHistory();
+
+// ============================================================
+// RESIN CALCULATOR
+// ============================================================
+const CALC_INCH_TO_MM = 25.4;
+const CALC_CUBIC_INCH_GRAMS = 16.387;
+const CALC_COAT_DEPTH_INCH = 0.0394;
+const CALC_COAT_FACTOR = 1.3;
+
+let calcType = 'casting';
+let calcShape = 'rect';
+let calcRatio = '2:1';
+const calcInputs = { length: '', breadth: '', depth: '', diameter: '' };
+
+function setCalcType(type) {
+  calcType = type === 'coating' ? 'coating' : 'casting';
+  paintResinCalculator();
+}
+
+function setCalcShape(shape) {
+  calcShape = shape === 'circle' ? 'circle' : 'rect';
+  paintResinCalculator();
+}
+
+function setCalcRatio(ratio) {
+  calcRatio = ratio === '3:1' ? '3:1' : '2:1';
+  paintCalcChoiceBtns();
+  paintCalcResults(computeCalcGrams());
+}
+
+function paintCalcChoiceBtns() {
+  document.querySelectorAll('[data-calc-type]').forEach(function (btn) {
+    btn.classList.toggle('active', btn.getAttribute('data-calc-type') === calcType);
+  });
+  document.querySelectorAll('[data-calc-shape]').forEach(function (btn) {
+    btn.classList.toggle('active', btn.getAttribute('data-calc-shape') === calcShape);
+  });
+  document.querySelectorAll('[data-calc-ratio]').forEach(function (btn) {
+    btn.classList.toggle('active', btn.getAttribute('data-calc-ratio') === calcRatio);
+  });
+}
+
+function calcParseNum(raw) {
+  const n = parseFloat(String(raw || '').replace(/,/g, '').trim());
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function gramsCastRect(length, breadth, depthMm) {
+  const depthIn = depthMm / CALC_INCH_TO_MM;
+  return length * breadth * depthIn * CALC_CUBIC_INCH_GRAMS;
+}
+
+function gramsCastCircle(diameter, depthMm) {
+  const radius = diameter / 2;
+  const depthIn = depthMm / CALC_INCH_TO_MM;
+  return Math.PI * radius * radius * depthIn * CALC_CUBIC_INCH_GRAMS;
+}
+
+function gramsCoatRect(length, breadth) {
+  return length * breadth * CALC_COAT_DEPTH_INCH * CALC_COAT_FACTOR * CALC_CUBIC_INCH_GRAMS;
+}
+
+function gramsCoatCircle(diameter) {
+  const radius = diameter / 2;
+  return Math.PI * radius * radius * CALC_COAT_DEPTH_INCH * CALC_COAT_FACTOR * CALC_CUBIC_INCH_GRAMS;
+}
+
+function computeCalcGrams() {
+  const length = calcParseNum(calcInputs.length);
+  const breadth = calcParseNum(calcInputs.breadth);
+  const depth = calcParseNum(calcInputs.depth);
+  const diameter = calcParseNum(calcInputs.diameter);
+  if (calcType === 'casting' && calcShape === 'rect') {
+    if (!length || !breadth || !depth) return 0;
+    return gramsCastRect(length, breadth, depth);
+  }
+  if (calcType === 'casting' && calcShape === 'circle') {
+    if (!diameter || !depth) return 0;
+    return gramsCastCircle(diameter, depth);
+  }
+  if (calcType === 'coating' && calcShape === 'rect') {
+    if (!length || !breadth) return 0;
+    return gramsCoatRect(length, breadth);
+  }
+  if (calcType === 'coating' && calcShape === 'circle') {
+    if (!diameter) return 0;
+    return gramsCoatCircle(diameter);
+  }
+  return 0;
+}
+
+function splitCalcRatio(totalGrams) {
+  if (calcRatio === '3:1') {
+    return { resin: (3 / 4) * totalGrams, hardener: (1 / 4) * totalGrams };
+  }
+  return { resin: (2 / 3) * totalGrams, hardener: (1 / 3) * totalGrams };
+}
+
+function calcPanelTitle() {
+  const shapeLabel = calcShape === 'circle' ? 'Circle' : 'Square/Rectangle';
+  const typeLabel = calcType === 'coating' ? 'coating' : 'casting';
+  return shapeLabel + ' ' + typeLabel;
+}
+
+function paintCalcResults(totalGrams) {
+  const wrap = document.getElementById('calc-results');
+  if (!wrap) return;
+  if (!totalGrams) {
+    wrap.innerHTML = '';
+    return;
+  }
+  const parts = splitCalcRatio(totalGrams);
+  wrap.innerHTML =
+    '<div class="calc-results-total">Total: ' +
+    totalGrams.toFixed(2) +
+    ' grams</div>' +
+    '<div class="calc-results-split">' +
+    '<div class="calc-result-card"><div class="label">Resin (' +
+    escHtml(calcRatio) +
+    ')</div><div class="value">' +
+    parts.resin.toFixed(2) +
+    ' g</div></div>' +
+    '<div class="calc-result-card"><div class="label">Hardener</div><div class="value">' +
+    parts.hardener.toFixed(2) +
+    ' g</div></div></div>';
+}
+
+function onCalcInputChange(field, value) {
+  if (field in calcInputs) calcInputs[field] = value;
+  paintCalcResults(computeCalcGrams());
+}
+
+function paintCalcInputPanel() {
+  const panel = document.getElementById('calc-input-panel');
+  if (!panel) return;
+  let fields = '';
+  if (calcShape === 'rect') {
+    fields +=
+      '<div class="calc-field"><label for="calc-length">Length (in inches)</label>' +
+      '<input type="text" inputmode="decimal" id="calc-length" placeholder="0.00" value="' +
+      escAttr(calcInputs.length) +
+      '" oninput="onCalcInputChange(\'length\', this.value)"></div>' +
+      '<div class="calc-field"><label for="calc-breadth">Breadth (in inches)</label>' +
+      '<input type="text" inputmode="decimal" id="calc-breadth" placeholder="0.00" value="' +
+      escAttr(calcInputs.breadth) +
+      '" oninput="onCalcInputChange(\'breadth\', this.value)"></div>';
+  } else {
+    fields +=
+      '<div class="calc-field"><label for="calc-diameter">Diameter (in inches)</label>' +
+      '<input type="text" inputmode="decimal" id="calc-diameter" placeholder="0.00" value="' +
+      escAttr(calcInputs.diameter) +
+      '" oninput="onCalcInputChange(\'diameter\', this.value)"></div>';
+  }
+  if (calcType === 'casting') {
+    fields +=
+      '<div class="calc-field"><label for="calc-depth">Thickness (depth) in mm</label>' +
+      '<input type="text" inputmode="decimal" id="calc-depth" placeholder="0.00" value="' +
+      escAttr(calcInputs.depth) +
+      '" oninput="onCalcInputChange(\'depth\', this.value)"></div>';
+  }
+  panel.innerHTML =
+    '<div class="calc-panel-title">' +
+    escHtml(calcPanelTitle()) +
+    '</div>' +
+    fields +
+    '<div class="calc-results" id="calc-results"></div>';
+  paintCalcResults(computeCalcGrams());
+}
+
+function paintResinCalculator() {
+  paintCalcChoiceBtns();
+  paintCalcInputPanel();
+}
 
 // ============================================================
 // INIT
@@ -4843,10 +5250,11 @@ async function bootStore() {
   updateCartCount();
   paintFeaturedGrid();
   paintFooterCategoryLinks();
-  if (window.location.hash !== '#admin') {
+  if (window.location.hash !== '#admin' && storeBootRoutePending) {
+    storeBootRoutePending = false;
     const route = parseRouteFromHash();
     if (route.page && route.page !== 'home') {
-      applyRouteFromHash({ history: 'none' });
+      applyRouteFromHash();
     }
     setTimeout(function () {
       openPolicyModal();
@@ -4876,3 +5284,12 @@ window.onCouponExcludeSearchInput = onCouponExcludeSearchInput;
 window.onCouponExcludeCheckboxChange = onCouponExcludeCheckboxChange;
 window.onAdminRevenueFilterChange = onAdminRevenueFilterChange;
 window.onAdminRecentOrdersFilterChange = onAdminRecentOrdersFilterChange;
+window.onAdminOrdersFilterChange = onAdminOrdersFilterChange;
+window.navigate = navigate;
+window.viewProduct = viewProduct;
+window.setFilter = setFilter;
+window.openCategoryFromHome = openCategoryFromHome;
+window.setCalcType = setCalcType;
+window.setCalcShape = setCalcShape;
+window.setCalcRatio = setCalcRatio;
+window.onCalcInputChange = onCalcInputChange;
