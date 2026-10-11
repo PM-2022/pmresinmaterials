@@ -5867,8 +5867,8 @@ async function saveReviewFromAdmin() {
   const name = document.getElementById('review-form-name').value.trim();
   const text = document.getElementById('review-form-text').value.trim();
   const rating = Number(document.getElementById('review-form-rating').value) || 5;
-  if (!name || !text) {
-    showToast('Add the customer name and the review.');
+  if (!name) {
+    showToast('Add the customer name.');
     return;
   }
   if (text.length > 150) {
