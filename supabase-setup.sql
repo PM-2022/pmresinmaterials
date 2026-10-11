@@ -24,7 +24,7 @@ create table if not exists public.orders (
   total numeric not null,
   payment_method text,
   payment_label text,
-  status text not null default 'Pending',
+  status text not null default 'Pending payment',
   shipping_amount numeric default 0,
   total_weight_kg numeric,
   payment_reference text,

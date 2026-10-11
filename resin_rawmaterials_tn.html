@@ -52,11 +52,11 @@
     font-family: var(--font-head);
   }
   .logo-img-wrap {
-    height: 48px; width: auto; max-width: 100px; border-radius: 10px; overflow: hidden; flex-shrink: 0;
-    border: 2px solid rgba(255,255,255,0.4); box-shadow: 0 2px 10px rgba(0,0,0,0.12);
-    display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.12);
+    height: 52px; width: 52px; border-radius: 10px; overflow: hidden; flex-shrink: 0;
+    border: 2px solid rgba(255,255,255,0.55); box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+    display: flex; align-items: center; justify-content: center; background: white;
   }
-  .logo-img-wrap img { height: 100%; width: auto; max-width: 100px; object-fit: contain; display: block; }
+  .logo-img-wrap img { height: 100%; width: 100%; object-fit: cover; display: block; }
   .logo-text { line-height: 1.2; min-width: 0; }
   .logo-text .brand { font-family: var(--font-head); font-size: 13px; font-weight: 700; color: white; }
   @media (min-width: 480px) { .logo-text .brand { font-size: 14px; } }
@@ -109,7 +109,49 @@
   }
   .hero h1 { font-family: var(--font-head); font-size: clamp(32px, 5vw, 52px); font-weight: 700; margin-bottom: 16px; line-height: 1.2; }
   .hero p { font-size: 17px; opacity: 0.85; max-width: 560px; margin: 0 auto 32px; line-height: 1.6; }
+  .hero-banner { text-align: center; margin-bottom: 20px; }
+  .hero-banner img {
+    max-width: min(360px, 88vw);
+    height: auto;
+    border-radius: 14px;
+    box-shadow: 0 10px 36px rgba(0,0,0,0.22);
+  }
   .hero-btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .home-reviews { width: min(1100px, 100%); margin: 8px auto 22px; text-align: left; }
+  .home-reviews-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px;
+  }
+  .home-reviews-head h2 { font-family: var(--font-head); font-size: 26px; color: white; margin: 0; }
+  .review-scroll-btns { display: flex; gap: 8px; }
+  .review-scroll-btns button {
+    width: 40px; height: 40px; border-radius: 999px; border: 1.5px solid rgba(255,255,255,0.45);
+    background: rgba(255,255,255,0.12); color: white; font-size: 22px; line-height: 1; cursor: pointer;
+  }
+  .review-scroll-btns button:hover { background: rgba(255,255,255,0.22); }
+  .home-reviews-track {
+    display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory;
+    scrollbar-width: none; padding-bottom: 6px;
+  }
+  .home-reviews-track.is-single { justify-content: center; }
+  .review-card {
+    flex: 0 0 min(320px, 84vw); scroll-snap-align: start;
+    border: 1px solid var(--border); border-radius: 14px; background: var(--cream);
+    padding: 14px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .review-card img { width: 100%; height: 168px; object-fit: cover; border-radius: 10px; background: var(--sand); }
+  .review-stars { color: #E0A100; letter-spacing: 2px; font-size: 16px; }
+  .review-card .review-name { font-weight: 700; color: var(--ocean-dark); }
+  .review-card .review-text { font-size: 14px; line-height: 1.5; color: var(--text); white-space: pre-wrap; }
+  .delivery-estimate {
+    margin: 16px 0 8px; padding: 12px 14px; border-radius: 12px;
+    background: var(--sand); border: 1px solid var(--border); color: var(--ocean-dark);
+    font-size: 14px; line-height: 1.55;
+  }
+  .delivery-estimate strong { display: block; margin-bottom: 6px; }
+  .guide-block { background: white; border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+  .guide-block h2 { font-family: var(--font-head); font-size: 22px; color: var(--ocean-dark); margin: 0 0 10px; }
+  .guide-block p { margin: 0; white-space: pre-wrap; line-height: 1.65; }
+  .guide-block img { width: 100%; max-height: 420px; object-fit: cover; border-radius: 12px; margin-bottom: 12px; display: block; }
   .btn-primary {
     background: var(--coral); color: white; border: none; padding: 13px 28px;
     border-radius: var(--radius); font-family: var(--font-body); font-size: 15px; font-weight: 600;
@@ -346,6 +388,27 @@
   .product-detail-info .price { font-size: 28px; font-weight: 700; color: var(--ocean-dark); margin: 16px 0; }
   .product-detail-info .price .price-strike { font-size: 16px; margin-right: 8px; text-decoration: line-through; color: var(--text-muted); font-weight: 500; }
   .product-detail-info .desc { font-size: 15px; line-height: 1.7; color: var(--text-muted); margin-bottom: 24px; }
+  .variant-tile-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--text-muted); }
+  .variant-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+    gap: 10px;
+  }
+  .variant-tile {
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px;
+    min-height: 68px; padding: 12px 14px; text-align: left;
+    border: 1.5px solid var(--border); border-radius: 12px; background: white;
+    font-family: var(--font-body); cursor: pointer; color: var(--text);
+  }
+  .variant-tile-name { font-size: 14px; font-weight: 700; color: var(--ocean-dark); line-height: 1.3; }
+  .variant-tile-price { font-size: 13px; font-weight: 600; color: var(--text); }
+  .variant-tile-stock { font-size: 11px; color: var(--text-muted); }
+  .variant-tile.active {
+    border: 2px solid var(--ocean); background: #f3f7ff;
+    box-shadow: 0 2px 8px rgba(26,74,138,0.12);
+  }
+  .variant-tile.out { opacity: 0.62; }
+  .variant-tile.out .variant-tile-stock { color: var(--danger); font-weight: 600; }
   .qty-row { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
   .qty-ctrl { display: flex; align-items: center; gap: 0; border: 1.5px solid var(--border); border-radius: 8px; overflow: hidden; }
   .qty-ctrl button {
@@ -404,6 +467,32 @@
     cursor: pointer; transition: background 0.2s; margin-top: 16px;
   }
   .btn-checkout:hover { background: var(--ocean-light); }
+  .btn-instore {
+    width: 100%; background: white; color: var(--ocean); border: 2px solid var(--ocean);
+    padding: 14px; border-radius: var(--radius); font-family: var(--font-body); font-size: 15px; font-weight: 700;
+    cursor: pointer; margin-top: 10px;
+  }
+  .btn-instore:hover { background: #f4f8ff; }
+  .pickup-alert {
+    background: #fff1ec; border: 2px solid var(--coral); color: #8d2b16;
+    border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px;
+    font-size: 16px; font-weight: 800; line-height: 1.45; text-align: center;
+  }
+  .payment-liability {
+    margin-top: 14px; padding: 14px 16px; border-radius: var(--radius);
+    background: #1A1A2E; color: #fff; font-size: 15px; font-weight: 700;
+    line-height: 1.55; text-align: left;
+  }
+  .pickup-store {
+    background: white; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 16px; margin-bottom: 16px; font-size: 14px; line-height: 1.6; color: var(--text);
+  }
+  .pickup-store strong { color: var(--ocean-dark); }
+  .order-placed-sheet { max-width: 520px; }
+  .order-placed-title { font-family: var(--font-head); font-size: 28px; color: var(--ocean-dark); text-align: center; margin: 0 0 6px; }
+  .order-placed-lead { text-align: center; font-size: 14px; color: var(--text-muted); margin: 0 0 12px; line-height: 1.5; }
+  .order-placed-id { text-align: center; font-size: 26px; font-weight: 800; color: var(--ocean); letter-spacing: 0.4px; margin: 0 0 16px; }
+  .order-placed-sheet .confirm-row { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; padding: 6px 0; border-bottom: 1px solid var(--border); }
   .empty-cart { text-align: center; padding: 80px 20px; color: var(--text-muted); }
   .empty-cart .empty-icon { font-size: 64px; margin-bottom: 16px; }
   .empty-cart h3 { font-family: var(--font-head); font-size: 22px; color: var(--text); margin-bottom: 8px; }
@@ -429,6 +518,7 @@
     cursor: pointer; transition: background 0.2s; margin-top: 16px;
   }
   .btn-place-order:hover { background: var(--coral-light); }
+  .btn-place-order:disabled { background: #c9c3b8; cursor: not-allowed; }
 
   /* ── ORDER CONFIRM ── */
   .confirm-page { text-align: center; padding: 60px 20px; }
@@ -530,6 +620,12 @@
     font-weight: 700;
     color: var(--ocean-dark);
     margin: 0;
+  }
+  .admin-recent-orders-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px 16px;
   }
   .admin-recent-orders-head .form-group { margin: 0; min-width: 0; }
   .admin-recent-orders-head label { font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 4px; }
@@ -797,6 +893,9 @@
 
   /* ── RESPONSIVE ── */
   @media (max-width: 768px) {
+    .variant-tiles { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .variant-tile { min-height: 76px; padding: 12px 10px; }
+    .variant-tile-name { font-size: 13px; }
     .about-grid, .product-detail-grid, .cart-layout, .checkout-layout { grid-template-columns: 1fr; }
     .home-categories-wrap { padding: 26px 1rem 38px; }
     .home-categories-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -844,6 +943,12 @@
     .hamburger { display: block; }
     #site-header { position: sticky; }
     .header-inner { position: relative; }
+    .hero { display: flex; flex-direction: column; }
+    .hero-btns { order: -1; margin-bottom: 28px; }
+    .hero-banner { order: 1; }
+    .home-reviews { order: 2; }
+    .hero h1 { order: 3; }
+    .hero p { order: 4; }
     .admin-header {
       height: auto;
       min-height: 56px;
@@ -861,15 +966,59 @@
       display: flex;
       width: 100%;
       gap: 6px;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      padding-bottom: 2px;
+      flex-wrap: wrap;
+      overflow: visible;
     }
     .admin-tab {
-      flex: 0 0 auto;
-      padding: 8px 14px;
-      white-space: nowrap;
+      flex: 1 1 calc(50% - 6px);
+      padding: 8px 10px;
+      white-space: normal;
+      text-align: center;
     }
+    .admin-orders-table thead { display: none; }
+    .admin-orders-table,
+    .admin-orders-table tbody,
+    .admin-orders-table tr,
+    .admin-orders-table td {
+      display: block;
+      width: 100%;
+    }
+    .admin-orders-table {
+      border: none;
+      background: transparent;
+      border-radius: 0;
+    }
+    .admin-orders-table tr {
+      background: var(--cream);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 12px;
+      padding: 6px 0 8px;
+    }
+    .admin-orders-table td {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      border-top: none;
+      padding: 7px 12px;
+      text-align: right;
+    }
+    .admin-orders-table td[data-label]::before {
+      content: attr(data-label);
+      flex: 0 0 auto;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      text-align: left;
+    }
+    .admin-orders-table td code,
+    .admin-orders-table .order-status-select {
+      max-width: 62%;
+    }
+    .admin-orders-table tr:hover td { background: transparent; }
   }
   @media (max-width: 480px) {
     .stat-cards { grid-template-columns: 1fr; }
@@ -900,6 +1049,12 @@
   }
   .policy-list { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 10px; font-size: 14px; color: var(--text); line-height: 1.55; }
   .policy-list li { padding-left: 2px; }
+  .policy-doc { display: grid; gap: 22px; }
+  .policy-doc h2 { font-family: var(--font-head); font-size: 18px; color: var(--ocean-dark); margin: 0 0 8px; }
+  .policy-doc p { margin: 0 0 10px; font-size: 15px; line-height: 1.65; color: var(--text); }
+  .policy-doc p:last-child { margin-bottom: 0; }
+  .policy-doc ul { margin: 0; padding-left: 1.25rem; display: grid; gap: 8px; font-size: 15px; line-height: 1.6; color: var(--text); }
+  .policy-doc a { color: var(--ocean); }
   @media (max-width: 480px) {
     .policy-fab { left: 12px; right: 12px; bottom: 12px; border-radius: 10px; }
   }
@@ -911,7 +1066,7 @@
 <header id="site-header">
   <div class="header-inner">
     <div class="logo" onclick="navigate('home')" title="Preserving Memories Resin Materials">
-      <div class="logo-img-wrap"><img src="assets/pm-resin-brand.png" alt="" width="100" height="48" decoding="async" /></div>
+      <div class="logo-img-wrap"><img src="assets/pm-resin-logo.jpg" alt="" width="100" height="48" decoding="async" /></div>
       <div class="logo-text">
         <div class="brand">Preserving Memories Resin Materials</div>
         <div class="sub">One-Stop Destination for All Your Resin Needs</div>
@@ -921,6 +1076,7 @@
       <a onclick="navigate('home')" id="nav-home">Home</a>
       <a onclick="navigate('shop')" id="nav-shop">Shop</a>
       <a onclick="navigate('calculator')" id="nav-calculator">Resin Calculator</a>
+      <a onclick="navigate('guide')" id="nav-guide">Beginner Guide</a>
       <a onclick="navigate('about')" id="nav-about">About</a>
       <a onclick="navigate('contact')" id="nav-contact">Contact</a>
     </nav>
@@ -940,9 +1096,19 @@
 <!-- ==================== HOME PAGE ==================== -->
 <div id="page-home" class="page active">
   <div class="hero">
-    <div style="text-align:center;margin-bottom:20px;">
-      <img src="assets/pm-resin-brand.png" alt="Preserving Memories Resin Materials" width="400" height="400" decoding="async" style="max-width:min(360px,88vw);height:auto;border-radius:14px;box-shadow:0 10px 36px rgba(0,0,0,0.22);" />
+    <div class="hero-banner">
+      <img src="assets/pm-resin-logo.jpg" alt="Preserving Memories Resin Materials" width="400" height="400" decoding="async" />
     </div>
+    <section class="home-reviews" id="home-reviews" hidden>
+      <div class="home-reviews-head">
+        <h2>Reviews</h2>
+        <div class="review-scroll-btns">
+          <button type="button" onclick="scrollHomeReviews(-1)" aria-label="Previous reviews">‹</button>
+          <button type="button" onclick="scrollHomeReviews(1)" aria-label="Next reviews">›</button>
+        </div>
+      </div>
+      <div class="home-reviews-track" id="home-reviews-track"></div>
+    </section>
     <h1>Premium Resin Art Supplies<br>for Every Creator</h1>
     <p>High-quality resin raw materials for artists, jewelers, crafters and small businesses across Tamil Nadu.</p>
     <div class="hero-btns">
@@ -985,7 +1151,7 @@
     <div class="container">
       <div class="about-grid">
         <div class="about-img">
-          <img src="assets/pm-resin-brand.png" alt="Preserving Memories Resin Materials" class="about-brand-img" decoding="async" />
+          <img src="assets/pm-resin-logo.jpg" alt="Preserving Memories Resin Materials" class="about-brand-img" decoding="async" />
           <div class="tagline" style="margin-top:14px;text-align:center;">One-Stop Destination for All Your Resin Needs</div>
         </div>
         <div class="about-text">
@@ -1030,19 +1196,27 @@
 <!-- ==================== PRODUCT DETAIL PAGE ==================== -->
 <div id="page-detail" class="page">
   <div class="container">
-    <div class="back-link" onclick="navigate('shop')">← Back to Shop</div>
+    <div class="back-link" onclick="goBack('shop')">← Back to Shop</div>
     <div class="product-detail-grid">
       <div class="product-detail-img" id="detail-img"></div>
       <div class="product-detail-info">
         <div class="product-category" id="detail-cat"></div>
         <h1 id="detail-name"></h1>
         <div id="detail-stock-badge" style="margin:8px 0;"></div>
-        <div id="detail-variant-wrap" style="display:none;margin:12px 0;">
-          <label for="detail-variant" style="display:block;font-size:13px;margin-bottom:6px;color:var(--text-muted);">Size / option</label>
-          <select id="detail-variant" class="shop-search" style="max-width:min(360px,100%);padding:10px 12px;" onchange="onDetailVariantChange()"></select>
+        <div id="detail-variant-wrap" style="display:none;margin:12px 0 4px;">
+          <div class="variant-tile-label">Size / option</div>
+          <div id="detail-variant-tiles" class="variant-tiles"></div>
+          <input type="hidden" id="detail-variant" value="">
         </div>
         <div class="price" id="detail-price"></div>
         <div class="desc" id="detail-desc"></div>
+        <div class="delivery-estimate">
+          <strong>Estimated delivery info:</strong>
+          Trichy: Same day in case of instore pickup<br>
+          Tamil Nadu: 1–3 days<br>
+          South India: 2–4 days<br>
+          Rest of India: 4–7 days
+        </div>
         <div class="qty-row">
           <div class="qty-ctrl">
             <button onclick="changeDetailQty(-1)">−</button>
@@ -1055,6 +1229,17 @@
         <button class="btn-add-large" id="detail-add-btn" onclick="addDetailToCart()">Add to Cart</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ==================== BEGINNER GUIDE ==================== -->
+<div id="page-guide" class="page">
+  <div class="hero" style="padding:60px 1.5rem;">
+    <h1 style="font-size:clamp(28px,4vw,42px);">Beginner Guide</h1>
+    <p>Notes and photos from the store to help you get started.</p>
+  </div>
+  <div class="section">
+    <div class="container" id="guide-content"></div>
   </div>
 </div>
 
@@ -1075,7 +1260,7 @@
           <p>We are proud to be <strong>a unit of Preserving Memories</strong> — a brand built on the belief that every creation tells a story worth keeping.</p>
         </div>
         <div class="about-img">
-          <img src="assets/pm-resin-brand.png" alt="Preserving Memories Resin Materials" class="about-brand-img" decoding="async" />
+          <img src="assets/pm-resin-logo.jpg" alt="Preserving Memories Resin Materials" class="about-brand-img" decoding="async" />
           <div class="unit" style="margin-top:8px;">Tamil Nadu</div>
           <div class="tagline" style="margin-top:12px;text-align:center;">One-Stop Destination for All Your Resin Needs</div>
           <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left;">
@@ -1135,22 +1320,106 @@
 <!-- ==================== STORE POLICY PAGE ==================== -->
 <div id="page-policy" class="page">
   <div class="container" style="padding:36px 1.5rem 56px;max-width:760px;">
-    <div class="back-link" onclick="navigate('home')">← Back to Home</div>
+    <div class="back-link" onclick="goBack('home')">← Back to Home</div>
     <h1 style="font-family:var(--font-head);font-size:clamp(26px,3.5vw,34px);color:var(--ocean-dark);margin:20px 0 8px;">Store policy</h1>
-    <p style="font-size:14px;color:var(--text-muted);margin:0 0 22px;line-height:1.5;">Please read before placing an order.</p>
-    <div style="background:white;border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px 26px;box-shadow:var(--shadow);">
-      <ul style="margin:0;padding-left:1.25rem;line-height:1.65;font-size:15px;color:var(--text);">
-        <li style="margin-bottom:12px;">An uncut 360° unboxing video* is mandatory to claim any refund for missing items or related issues.</li>
-        <li style="margin-bottom:12px;">The video must clearly show all sides of the package and contents, and must be recorded from the beginning of the unboxing process.</li>
-        <li style="margin-bottom:12px;">If any item is missing, we will issue a refund only. We will not reship the item. You may place a new order if needed.</li>
-        <li style="margin-bottom:12px;">No claims will be accepted without a clear unboxing video.</li>
-        <li style="margin-bottom:12px;">We do not offer exchange or return under any circumstances.</li>
-        <li style="margin-bottom:12px;">Claims raised after a few days of delivery will not be entertained.</li>
-        <li style="margin-bottom:12px;">No warranty is provided for machinery or lights.</li>
-        <li style="margin-bottom:12px;">We do not guarantee against transit damage.</li>
-        <li style="margin-bottom:0;">Please ensure that your shipping address is accurate when placing an order. If a package is returned due to incorrect details, reshipping charges must be paid by the customer.</li>
-      </ul>
-      <p style="margin:22px 0 0;font-weight:600;font-size:14px;color:var(--ocean-dark);line-height:1.5;">Kindly place your order only after reviewing and agreeing to the above terms.</p>
+    <p style="font-size:15px;color:var(--text);margin:0 0 22px;line-height:1.6;">Please read our store policy carefully before placing an order. By placing an order on our website, you agree to the following terms and conditions.</p>
+    <div class="policy-doc" style="background:white;border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px 26px;box-shadow:var(--shadow);">
+      <section>
+        <h2>1. Product Availability</h2>
+        <p>All products are subject to stock availability. Although we try to keep our website stock updated, occasional stock discrepancies may occur.</p>
+        <p>If an item is unavailable after you place an order, we will inform you and issue a refund for that item. The remaining available items will be dispatched.</p>
+      </section>
+      <section>
+        <h2>2. Order Processing &amp; Dispatch</h2>
+        <ul>
+          <li>Orders confirmed before 10:00 AM are usually dispatched on the same business day.</li>
+          <li>Orders confirmed after 10:00 AM will usually be dispatched on the next business day.</li>
+          <li>Our working days are Monday to Saturday, excluding national holidays.</li>
+          <li>Dispatch times may vary due to holidays, high order volumes, or other unexpected circumstances.</li>
+        </ul>
+      </section>
+      <section>
+        <h2>3. Shipping &amp; Delivery</h2>
+        <p>Estimated delivery times after dispatch:</p>
+        <ul>
+          <li>Tamil Nadu &amp; Puducherry: 1–3 business days.</li>
+          <li>Other states: 3–7 business days.</li>
+        </ul>
+        <p>These are estimated delivery times and may vary depending on the courier service, location, weather, or other unforeseen circumstances.</p>
+        <p>Shipping charges are calculated at checkout based on the order's weight, dimensions, and delivery location.</p>
+      </section>
+      <section>
+        <h2>4. Change of Delivery Address</h2>
+        <p>If you need to change your shipping address, please contact us as soon as possible through WhatsApp at <a href="https://wa.me/917695976223" target="_blank" rel="noopener noreferrer">7695976223</a>.</p>
+        <p>Address changes can only be made before the order is dispatched. Once the parcel has been dispatched, we cannot guarantee that the address can be changed.</p>
+      </section>
+      <section>
+        <h2>5. Unboxing Video – Mandatory for Claims</h2>
+        <p>A continuous, uncut 360° unboxing video is mandatory for any claim related to missing items, incorrect items, or transit damage.</p>
+        <p>To make a valid claim:</p>
+        <ul>
+          <li>Start recording before opening the parcel.</li>
+          <li>Show all sides of the unopened package clearly.</li>
+          <li>Record the entire unboxing process without pauses, cuts, or editing.</li>
+          <li>Clearly show the items received and any missing, incorrect, or damaged products.</li>
+          <li>Submit your claim and video within 24 hours of receiving the parcel.</li>
+        </ul>
+        <p>Claims without a clear, continuous unboxing video or claims submitted after the specified period may not be accepted.</p>
+      </section>
+      <section>
+        <h2>6. Missing or Incorrect Items</h2>
+        <p>If any item is missing or an incorrect item is received, please contact us within 24 hours of delivery and share the complete unboxing video.</p>
+        <p>After verification, we will provide a refund for the eligible item. We will not reship missing or incorrect items. If you still need the product, you may place a new order.</p>
+      </section>
+      <section>
+        <h2>7. Parcel Damaged During Transit</h2>
+        <p>We pack our products carefully, but damage may occasionally occur during transportation.</p>
+        <p>If your parcel or its contents arrive damaged:</p>
+        <ul>
+          <li>Record the damage clearly in your continuous unboxing video.</li>
+          <li>Contact us within 24 hours of receiving the parcel.</li>
+          <li>Share the video and relevant photos with our customer support team.</li>
+        </ul>
+        <p>After reviewing the evidence, we will process a refund for eligible damaged items. Refunds will not be provided if the damage cannot be verified from the submitted evidence.</p>
+        <p>Please note that we cannot guarantee that every parcel will arrive without transit damage.</p>
+      </section>
+      <section>
+        <h2>8. Returns, Exchanges &amp; Refunds</h2>
+        <ul>
+          <li>We do not accept returns or exchanges for change of mind, incorrect product selection, or personal preference.</li>
+          <li>Refunds may be provided for verified missing items, incorrect items, eligible transit damage, or items cancelled due to stock unavailability.</li>
+          <li>A continuous, uncut 360° unboxing video is mandatory for claims related to missing, incorrect, or damaged items. Claims must be reported within 24 hours of delivery.</li>
+          <li>Once a refund is approved, it will be processed within 2 business days. The time taken for the amount to reflect in your account may vary depending on your bank or payment provider.</li>
+          <li>Missing or incorrect items will be refunded if the claim is verified. We will not reship these items; you may place a new order if required.</li>
+        </ul>
+        <p>Please check the product details, sizes, quantities, and descriptions carefully before placing your order.</p>
+      </section>
+      <section>
+        <h2>9. Machinery &amp; Lights – No Warranty</h2>
+        <p>No warranty is provided on machinery or lights sold by PM Resin Materials.</p>
+        <p>Please check the product details carefully before placing your order. Any issue noticed upon delivery must be reported within 24 hours, along with a continuous, uncut 360° unboxing video.</p>
+        <p>Reporting an issue does not guarantee a refund. Any claim will be reviewed based on the evidence provided and applicable consumer rights.</p>
+      </section>
+      <section>
+        <h2>10. Returned or Undelivered Parcels</h2>
+        <p>If a parcel is returned to us due to an incorrect or incomplete address, the recipient being unavailable or unreachable, refusal to accept the parcel, or other reasons attributable to the customer, the customer must pay the applicable shipping charges for reshipping.</p>
+        <p>Please ensure that your name, phone number, and complete shipping address are correct before placing your order.</p>
+      </section>
+      <section>
+        <h2>11. Tracking &amp; Delivery Delays</h2>
+        <p>For tracking details, please contact us on WhatsApp at <a href="https://wa.me/917695976223" target="_blank" rel="noopener noreferrer"><strong>7695976223</strong></a>.</p>
+        <p>If your parcel has not arrived within the estimated delivery period, contact us so we can check with the courier service and assist you.</p>
+      </section>
+      <section>
+        <h2>12. Customer Support</h2>
+        <p>For order-related questions, shipping concerns, or claims, please contact us:</p>
+        <p>WhatsApp: <a href="https://wa.me/917695976223" target="_blank" rel="noopener noreferrer">+91 7695976223</a></p>
+        <p>Please provide your order number when contacting us so we can assist you faster.</p>
+      </section>
+      <section>
+        <p style="font-weight:600;color:var(--ocean-dark);">Thank you for choosing PM Resin Materials!</p>
+        <p>We appreciate your trust and support. Please place your order only after reading and understanding our store policy.</p>
+      </section>
     </div>
   </div>
 </div>
@@ -1166,7 +1435,7 @@
   <div class="container">
     <div class="contact-layout">
       <div class="contact-card">
-        <img src="assets/pm-resin-brand.png" alt="" class="contact-brand-banner" decoding="async" />
+        <img src="assets/pm-resin-logo.jpg" alt="" class="contact-brand-banner" decoding="async" />
         <h2>Get in touch</h2>
         <p class="lead">We’re happy to help with product advice, stock checks, and orders. WhatsApp is usually the fastest way to reach us.</p>
         <ul class="contact-list">
@@ -1225,7 +1494,7 @@
       <div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
           <div class="cart-title">Your Cart</div>
-          <button class="btn-outline" type="button" style="background:white;color:var(--ocean);border:1.5px solid var(--ocean);padding:8px 14px;font-size:13px;" onclick="navigate('shop')">← Back to Shop</button>
+          <button class="btn-outline" type="button" style="background:white;color:var(--ocean);border:1.5px solid var(--ocean);padding:8px 14px;font-size:13px;" onclick="goBack('shop')">← Back to Shop</button>
         </div>
         <div id="cart-items-list"></div>
       </div>
@@ -1246,7 +1515,11 @@
             <div class="form-group"><label>Full Name *</label><input type="text" id="co-name" placeholder="Your full name"></div>
             <div class="form-group"><label>Phone Number *</label><input type="tel" id="co-phone" placeholder="+91 76959 76223"></div>
             <div class="form-group"><label>Email Address *</label><input type="email" id="co-email" placeholder="preservingmemories2022@gmail.com"></div>
-            <div class="form-group"><label>PIN Code *</label><input type="text" id="co-pin" placeholder="600001"></div>
+            <div class="form-group">
+              <label>PIN Code *</label>
+              <input type="text" id="co-pin" inputmode="numeric" maxlength="6" placeholder="600001" autocomplete="postal-code" oninput="onCheckoutPinInput()">
+              <p id="co-pin-hint" style="font-size:12px;color:var(--text-muted);margin:6px 0 0;line-height:1.4;min-height:1.2em;"></p>
+            </div>
             <div class="form-group full"><label>Address Line 1 *</label><input type="text" id="co-addr1" placeholder="Door no, Street name"></div>
             <div class="form-group"><label>City *</label><input type="text" id="co-city" placeholder="Chennai"></div>
             <div class="form-group"><label>State *</label><input type="text" id="co-state" value="Tamil Nadu" placeholder="Tamil Nadu" oninput="refreshCheckoutTotals()" onchange="refreshCheckoutTotals()"></div>
@@ -1265,6 +1538,7 @@
         <div class="form-section">
           <h3>Payment</h3>
           <p style="font-size:13px;color:var(--text-muted);line-height:1.55;margin:0;">Checkout opens Razorpay’s secure page (UPI, cards, netbanking, wallets). Your order is saved as pending until payment succeeds; the cart clears only after a successful payment.</p>
+          <p class="payment-liability">No cancellation or refund will be provided if you, or any third-party shipping agent you arrange, fail to collect or deliver the order. If you use a third-party shipping service, you are solely responsible for all pickup and delivery charges.</p>
         </div>
       </div>
 
@@ -1280,10 +1554,70 @@
           <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Minimum order amount: ₹200 (before coupon, excluding shipping)</div>
           <label style="display:flex;align-items:flex-start;gap:8px;margin-top:10px;font-size:12px;color:var(--text-muted);line-height:1.4;">
             <input type="checkbox" id="co-policy-ack" style="margin-top:2px;">
-            <span>I have read the order policy (dispatch timing, custom orders, unboxing claim rule, and no COD/return/refund/exchange).</span>
+            <span>I have read and agree to the <a onclick="navigate('policy')" style="color:var(--ocean);cursor:pointer;font-weight:600;">store policy</a>, including dispatch timing, the 24-hour unboxing-video claim rule, and the refund terms.</span>
           </label>
           <button class="btn-place-order" onclick="void placeOrder()">Pay with Razorpay →</button>
           <div style="font-size:11px;color:var(--text-muted);text-align:center;margin-top:10px;">By placing order, you agree to our terms of service and order policy.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== INSTORE PICKUP PAGE ==================== -->
+<div id="page-pickup" class="page">
+  <div class="container">
+    <div class="checkout-layout">
+      <div>
+        <div class="checkout-title">Instore Pickup</div>
+        <div class="pickup-alert">Instore pickup is strictly for customers in the Trichy area only.</div>
+        <div class="pickup-store">
+          <div><strong>Store Address</strong></div>
+          <div>Preserving Memories Resin Materials, Edamalaipatti pudur, Trichy - 620012</div>
+          <div style="margin-top:6px;"><strong>Phone:</strong> <a href="tel:+917695976223" style="color:var(--ocean);font-weight:700;">7695976223</a></div>
+        </div>
+        <div class="form-section">
+          <h3>Customer Information</h3>
+          <div class="form-grid">
+            <div class="form-group"><label>Full Name *</label><input type="text" id="pk-name" placeholder="Your full name" oninput="updatePickupPayState()"></div>
+            <div class="form-group"><label>Phone Number *</label><input type="tel" id="pk-phone" placeholder="+91 76959 76223" oninput="updatePickupPayState()"></div>
+            <div class="form-group full"><label>Email Address *</label><input type="email" id="pk-email" placeholder="you@email.com" oninput="updatePickupPayState()"></div>
+            <div class="form-group full"><label>Address *</label><input type="text" id="pk-addr" placeholder="Door no, street, area" oninput="updatePickupPayState()"></div>
+            <div class="form-group"><label>City *</label><input type="text" id="pk-city" placeholder="Trichy" oninput="updatePickupPayState()"></div>
+            <div class="form-group"><label>State *</label><input type="text" id="pk-state" placeholder="Tamil Nadu" oninput="updatePickupPayState()"></div>
+            <div class="form-group">
+              <label>PIN Code *</label>
+              <input type="text" id="pk-pin" inputmode="numeric" maxlength="6" placeholder="620012" autocomplete="postal-code" oninput="onPickupPinInput()">
+            </div>
+          </div>
+          <div class="form-group full" style="margin:12px 0 0;">
+            <label>Coupon code</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <input type="text" id="pk-coupon-input" placeholder="Enter code" autocomplete="off" style="flex:1;min-width:140px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;">
+              <button type="button" class="checkout-coupon-apply" onclick="void applyCheckoutCoupon()">Apply</button>
+              <button type="button" class="checkout-coupon-remove" onclick="clearCheckoutCoupon()">Remove</button>
+            </div>
+          </div>
+        </div>
+        <div class="form-section">
+          <h3>Payment</h3>
+          <p style="font-size:13px;color:var(--text-muted);line-height:1.55;margin:0;">You pay the bill, including packaging, on Razorpay (UPI, cards, netbanking, wallets). Your order is saved as pending until payment succeeds. Collect the order from the Trichy store.</p>
+          <p class="payment-liability">No cancellation or refund will be provided if you, or any third-party shipping agent you arrange, fail to collect or deliver the order. If you use a third-party shipping service, you are solely responsible for all pickup and delivery charges.</p>
+        </div>
+      </div>
+      <div>
+        <div class="order-summary" style="position:sticky;top:80px;">
+          <h3>Final Bill</h3>
+          <div id="pickup-items-summary"></div>
+          <div class="summary-row"><span>Subtotal</span><span id="pk-subtotal">₹0</span></div>
+          <div class="summary-row" id="pk-discount-row" style="display:none;color:#2d6a4f;"><span>Discount</span><span id="pk-discount">₹0</span></div>
+          <div class="summary-row"><span>Packaging</span><span id="pk-packaging">₹0</span></div>
+          <div class="summary-row total"><span>Total to pay</span><span id="pk-total">₹0</span></div>
+          <label style="display:flex;align-items:flex-start;gap:8px;margin-top:10px;font-size:12px;color:var(--text-muted);line-height:1.4;">
+            <input type="checkbox" id="pk-policy-ack" style="margin-top:2px;" onchange="updatePickupPayState()">
+            <span>I have read and agree to the <a onclick="navigate('policy')" style="color:var(--ocean);cursor:pointer;font-weight:600;">store policy</a>, and I will pick up this order in Trichy.</span>
+          </label>
+          <button class="btn-place-order" id="pk-pay-btn" disabled onclick="void placeOrder('pickup')">Pay with Razorpay →</button>
         </div>
       </div>
     </div>
@@ -1319,6 +1653,7 @@
         <a onclick="navigate('home')">Home</a>
         <a onclick="navigate('shop')">Shop</a>
         <a onclick="navigate('calculator')">Resin Calculator</a>
+        <a onclick="navigate('guide')">Beginner Guide</a>
         <a onclick="navigate('about')">About Us</a>
         <a onclick="navigate('contact')">Contact</a>
         <a onclick="navigate('cart')">Cart</a>
@@ -1366,7 +1701,8 @@
       <button type="button" class="admin-tab" data-admin-tab="products" onclick="adminTab('products')">Products</button>
       <button type="button" class="admin-tab" data-admin-tab="orders" onclick="adminTab('orders')">Orders</button>
       <button type="button" class="admin-tab" data-admin-tab="coupons" onclick="adminTab('coupons')">Coupons</button>
-      <button type="button" class="admin-tab" data-admin-tab="messages" onclick="adminTab('messages')">Messages</button>
+      <button type="button" class="admin-tab" data-admin-tab="reviews" onclick="adminTab('reviews')">Reviews</button>
+      <button type="button" class="admin-tab" data-admin-tab="guide" onclick="adminTab('guide')">Beginner Guide</button>
     </div>
     <button class="logout-btn" onclick="adminLogout()">Logout</button>
   </div>
@@ -1403,13 +1739,9 @@
           <div class="form-group">
             <label for="admin-revenue-status">Order status</label>
             <select id="admin-revenue-status" onchange="onAdminRevenueFilterChange()">
-              <option value="__pipeline__">Confirmed / Shipped / Delivered</option>
+              <option value="__pipeline__">Confirmed</option>
               <option value="__any__">Any status</option>
               <option value="Pending payment">Pending payment</option>
-              <option value="Pending">Pending</option>
-              <option value="Confirmed">Confirmed</option>
-              <option value="Shipped">Shipped</option>
-              <option value="Delivered">Delivered</option>
               <option value="Cancelled">Cancelled</option>
             </select>
           </div>
@@ -1423,23 +1755,29 @@
       <div style="background:white;border-radius:var(--radius);border:1px solid var(--border);padding:20px;">
         <div class="admin-recent-orders-head">
           <h3>Recent Orders</h3>
-          <div class="form-group">
-            <label for="admin-recent-orders-status">Status</label>
-            <select id="admin-recent-orders-status" onchange="onAdminRecentOrdersFilterChange()">
-              <option value="__any__">All statuses</option>
-              <option value="__pipeline__">Confirmed / Shipped / Delivered</option>
-              <option value="Pending payment">Pending payment</option>
-              <option value="Pending">Pending</option>
-              <option value="Confirmed">Confirmed</option>
-              <option value="Shipped">Shipped</option>
-              <option value="Delivered">Delivered</option>
-              <option value="Cancelled">Cancelled</option>
-            </select>
+          <div class="admin-recent-orders-filters">
+            <div class="form-group">
+              <label for="admin-recent-orders-type">Order type</label>
+              <select id="admin-recent-orders-type" onchange="onAdminRecentOrdersFilterChange()">
+                <option value="__any__">All orders</option>
+                <option value="instore">Instore pickup</option>
+                <option value="delivery">Online</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="admin-recent-orders-status">Status</label>
+              <select id="admin-recent-orders-status" onchange="onAdminRecentOrdersFilterChange()">
+                <option value="__any__">All statuses</option>
+                <option value="__pipeline__">Confirmed</option>
+                <option value="Pending payment">Pending payment</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
+            </div>
           </div>
         </div>
         <div class="admin-recent-orders-meta" id="admin-recent-orders-meta"></div>
-        <table class="admin-table" id="recent-orders-table">
-          <thead><tr><th>Order ID</th><th>Customer</th><th>Items</th><th>Total</th><th>Payment</th><th>Status</th></tr></thead>
+        <table class="admin-table admin-orders-table" id="recent-orders-table">
+          <thead><tr><th>Order ID</th><th>Customer</th><th>Items</th><th>Total</th><th>Type</th><th>Payment</th><th>Status</th><th></th></tr></thead>
           <tbody id="recent-orders-body"></tbody>
         </table>
       </div>
@@ -1544,34 +1882,68 @@
     <div class="admin-tab-content" id="admin-orders">
       <div class="admin-recent-orders-head">
         <h3 style="font-family:var(--font-head);font-size:20px;font-weight:700;color:var(--ocean-dark);margin:0;">All Orders</h3>
-        <div class="form-group">
-          <label for="admin-orders-status">Status</label>
-          <select id="admin-orders-status" onchange="onAdminOrdersFilterChange()">
-            <option value="__any__">All statuses</option>
-            <option value="__pipeline__">Confirmed / Shipped / Delivered</option>
-            <option value="Pending payment">Pending payment</option>
-            <option value="Pending">Pending</option>
-            <option value="Confirmed">Confirmed</option>
-            <option value="Shipped">Shipped</option>
-            <option value="Delivered">Delivered</option>
-            <option value="Cancelled">Cancelled</option>
-          </select>
+        <div class="admin-recent-orders-filters">
+          <div class="form-group">
+            <label for="admin-orders-type">Order type</label>
+            <select id="admin-orders-type" onchange="onAdminOrdersFilterChange()">
+              <option value="__any__">All orders</option>
+              <option value="instore">Instore pickup</option>
+              <option value="delivery">Online</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="admin-orders-status">Status</label>
+            <select id="admin-orders-status" onchange="onAdminOrdersFilterChange()">
+              <option value="__any__">All statuses</option>
+              <option value="__pipeline__">Confirmed</option>
+              <option value="Pending payment">Pending payment</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
+          </div>
         </div>
       </div>
       <div class="admin-recent-orders-meta" id="admin-orders-meta"></div>
-      <table class="admin-table">
-        <thead><tr><th>Order ID</th><th>Customer</th><th>Phone</th><th>Total</th><th>Payment</th><th>Date</th><th>Status</th><th>View</th></tr></thead>
+      <table class="admin-table admin-orders-table">
+        <thead><tr><th>Order ID</th><th>Customer</th><th>Phone</th><th>Total</th><th>Type</th><th>Payment</th><th>Date</th><th>Status</th><th>View</th></tr></thead>
         <tbody id="orders-tbody"></tbody>
       </table>
     </div>
 
-    <!-- Messages -->
-    <div class="admin-tab-content" id="admin-messages">
-      <div class="admin-actions"><h3>Contact messages</h3></div>
-      <table class="admin-table">
-        <thead><tr><th>ID</th><th>Date</th><th>Name</th><th>Email</th><th>Phone</th><th>Message</th></tr></thead>
-        <tbody id="messages-tbody"></tbody>
-      </table>
+    <div class="admin-tab-content" id="admin-reviews">
+      <div class="admin-actions"><h3>Customer reviews</h3></div>
+      <p style="font-size:12px;color:var(--text-muted);line-height:1.5;margin:0 0 14px;">Photos upload to Cloudflare. Run <code>supabase-migration-reviews-guide.sql</code> once so reviews save for every visitor. Set the R2 environment variables on Netlify before uploading photos.</p>
+      <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;">
+        <input type="hidden" id="review-form-id">
+        <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;">
+          <div class="form-group" style="margin:0;"><label style="font-size:12px;">Name *</label><input type="text" id="review-form-name" placeholder="Customer name" style="width:100%;"></div>
+          <div class="form-group" style="margin:0;"><label style="font-size:12px;">Star rating *</label>
+            <select id="review-form-rating" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);">
+              <option value="5">5 stars</option>
+              <option value="4">4 stars</option>
+              <option value="3">3 stars</option>
+              <option value="2">2 stars</option>
+              <option value="1">1 star</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" style="margin:12px 0 0;"><label style="font-size:12px;">Review * <span style="font-weight:500;color:var(--text-muted);">(150 characters)</span></label><textarea id="review-form-text" rows="4" maxlength="150" placeholder="What the customer said" style="width:100%;"></textarea></div>
+        <div class="form-group" style="margin:12px 0 0;"><label style="font-size:12px;">Photo</label><input type="file" id="review-form-photo" accept="image/*"></div>
+        <button type="button" class="btn-new" style="margin-top:12px;" onclick="void saveReviewFromAdmin()">Save review</button>
+      </div>
+      <div id="admin-reviews-list"></div>
+    </div>
+
+    <div class="admin-tab-content" id="admin-guide">
+      <div class="admin-actions"><h3>Beginner Guide</h3></div>
+      <p style="font-size:12px;color:var(--text-muted);line-height:1.5;margin:0 0 14px;">Each block is a heading, the text, and an optional photo. Photos upload to Cloudflare. Run <code>supabase-migration-reviews-guide.sql</code> once.</p>
+      <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;">
+        <input type="hidden" id="guide-form-id">
+        <div class="form-group" style="margin:0 0 12px;"><label style="font-size:12px;">Heading</label><input type="text" id="guide-form-title" placeholder="e.g. Mixing resin" style="width:100%;"></div>
+        <div class="form-group" style="margin:0 0 12px;"><label style="font-size:12px;">Text *</label><textarea id="guide-form-body" rows="6" placeholder="Write the guide section" style="width:100%;"></textarea></div>
+        <div class="form-group" style="margin:0;"><label style="font-size:12px;">Photo</label><input type="file" id="guide-form-photo" accept="image/*"></div>
+        <button type="button" class="btn-new" style="margin-top:12px;" onclick="void saveGuideBlockFromAdmin()">Save section</button>
+      </div>
+      <div id="admin-guide-list"></div>
     </div>
   </div>
 </div>
@@ -1658,14 +2030,26 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="order-placed-modal">
+  <div class="modal order-placed-sheet">
+    <h3 class="order-placed-title">Order placed</h3>
+    <p class="order-placed-lead">Your order has been placed. Screenshot this screen and keep the order number for reference.</p>
+    <div class="order-placed-id" id="order-placed-id">#PM-</div>
+    <div id="order-placed-body"></div>
+    <div class="modal-footer">
+      <button type="button" class="btn-primary" onclick="closeModal('order-placed-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="policy-modal">
   <div class="modal" style="max-width:640px;">
     <h3>Important Order Policy</h3>
     <ul class="policy-list">
-      <li>Orders will be dispatched the same business day if placed before 10:00 AM. Orders placed after 10:00 AM are dispatched the next business day.</li>
-      <li>For customised orders, DM us on WhatsApp: <strong>7695976223</strong>.</li>
-      <li>A 360° unboxing video is mandatory for any claim. Claims without unboxing video will not be entertained.</li>
-      <li><strong>No COD / Return / Refund / Exchange</strong>.</li>
+      <li>Orders confirmed before 10:00 AM are usually dispatched the same business day. Orders confirmed after 10:00 AM are usually dispatched the next business day (Monday–Saturday, excluding national holidays).</li>
+      <li>A continuous, uncut 360° unboxing video is mandatory for claims about missing, incorrect, or damaged items. Submit the video within 24 hours of delivery.</li>
+      <li>Refunds may be issued for verified missing or incorrect items, eligible transit damage, or items cancelled because they are out of stock. We do not accept returns or exchanges for change of mind.</li>
+      <li>Please read the full <a onclick="closeModal('policy-modal');navigate('policy')" style="color:var(--ocean);cursor:pointer;font-weight:600;">store policy</a> before placing an order. By ordering, you agree to those terms.</li>
     </ul>
     <div class="modal-footer">
       <button type="button" class="btn-cancel" onclick="closeModal('policy-modal')">Close</button>
@@ -1675,6 +2059,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<script src="store-logic.js?v=20260628-1"></script>
+<script src="store-logic.js?v=20261011-16"></script>
 </body>
 </html>
